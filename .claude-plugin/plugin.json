@@ -1,0 +1,19 @@
+{
+  "name": "boqo-channel",
+  "version": "0.1.0",
+  "description": "Auto-clip a whole YouTube channel every day with your brand, on your own machine.",
+  "author": {
+    "name": "boqo",
+    "url": "https://boqo.ai"
+  },
+  "homepage": "https://github.com/boqo-ai/boqo-channel",
+  "repository": "https://github.com/boqo-ai/boqo-channel",
+  "license": "MIT",
+  "keywords": [
+    "youtube",
+    "channel",
+    "clips",
+    "short-form video",
+    "agent skill"
+  ]
+}

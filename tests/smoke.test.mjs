@@ -1,0 +1,10 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+
+test("ffmpeg has the ass, subtitles and ebur128 filters", () => {
+  const out = execFileSync("ffmpeg", ["-hide_banner", "-filters"], { encoding: "utf8" });
+  for (const name of ["ass", "subtitles", "ebur128"]) {
+    assert.match(out, new RegExp(`^\\s*[TSC.]{2,3}\\s+${name}\\s`, "m"), `ffmpeg is missing the ${name} filter`);
+  }
+});
