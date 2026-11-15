@@ -12,8 +12,30 @@ const MIN_WORD_SEC = 0.01;
 const round3 = (x) => Math.round(x * 1000) / 1000;
 const num = (x) => (typeof x === 'number' && Number.isFinite(x) ? x : null);
 
+// A speaker change is `>>` (also `&gt;&gt;`, or a lone `>`), alone or glued to
+// the word that follows. A speaker dash is a `-` alone, or `- ` opening an event.
+const MARK_ONLY = /^(?:>|&gt;)+$/;
+const MARK_LEAD = /^(?:>>+|(?:&gt;){2,})\s*/;
+const DASH_LEAD = /^-\s+/;
+
 /**
- * Words from a YouTube json3 caption track. Each seg starts at
+ * The seg text without a speaker mark ('' when nothing is left). A mark inside
+ * a word, and hyphens that belong to a word (`well-known`, `-5`), stay.
+ * @param {string} text trimmed
+ * @param {boolean} atStart no speech seg has come yet in this event
+ */
+function speakerStripped(text, atStart) {
+  let t = text;
+  if (MARK_ONLY.test(t)) return '';
+  t = t.replace(MARK_LEAD, '');
+  if (atStart) t = t.replace(DASH_LEAD, '');
+  return t === '-' || MARK_ONLY.test(t) ? '' : t;
+}
+
+/**
+ * Words from a YouTube json3 caption track. Sound tags (`[Music]`,
+ * `[Applause]`) are dropped as in `wordsFromWhisper`, and so are speaker
+ * marks (`>>`, a speaker dash); a dropped mark gives its time to no one. Each seg starts at
  * `tStartMs + tOffsetMs`. A word ends where the next one starts, and never
  * runs longer than one second; the last word ends at its event's end, also
  * capped.
@@ -27,18 +49,21 @@ export function wordsFromJson3(j) {
     const t0 = num(ev?.tStartMs);
     if (t0 === null || !Array.isArray(ev.segs)) continue;
     const d = num(ev.dDurationMs);
+    let atStart = true;
     for (const seg of ev.segs) {
-      const text = typeof seg?.utf8 === 'string' ? seg.utf8.trim() : '';
+      const text = speakerStripped(typeof seg?.utf8 === 'string' ? seg.utf8.trim() : '', atStart);
       if (!text) continue;
+      atStart = false;
       const startMs = t0 + (num(seg.tOffsetMs) ?? 0);
       raw.push({ w: text, startMs, endMs: d === null ? null : t0 + d });
     }
   }
   raw.sort((a, b) => a.startMs - b.startMs);
-  return raw.map((r, i) => {
+  const spoken = dropNonSpeech(raw, (r) => r.w);
+  return spoken.map((r, i) => {
     const s = r.startMs / 1000;
     const cap = s + MAX_WORD_SEC;
-    const next = raw[i + 1];
+    const next = spoken[i + 1];
     let e = next ? next.startMs / 1000 : r.endMs === null ? cap : r.endMs / 1000;
     e = Math.min(e, cap);
     if (e <= s) e = s + MIN_WORD_SEC;
@@ -46,31 +71,130 @@ export function wordsFromJson3(j) {
   });
 }
 
-// whisper's non-speech items: wholly bracketed ([BLANK_AUDIO], [_BEG_],
-// [Music], (laughs)) or only music notes. They are not words to burn in.
-const NON_SPEECH = /^(?:\[[^\]]*\]|\([^)]*\)|[\u266a\u266b\s]+)$/;
+// whisper's non-speech items: wholly bracketed ([BLANK_AUDIO], [Music],
+// (laughs), several in a row) or only music notes. They are not words to burn in.
+const NON_SPEECH = /^(?:\[[^\]]*\]|\([^)]*\)|[♪♫♬\s])+$/;
+
+// whisper with one word per item also splits a tag across items: " (upbeat" +
+// " music)". An item that opens a bracket (or a note) without closing it opens
+// a span; the item that ends with the matching closer ends it.
+const OPENERS = [
+  { open: /^\(/, hasClose: /\)/, close: /\)[.,!?;:'"…-]*$/ },
+  { open: /^\[/, hasClose: /\]/, close: /\][.,!?;:'"…-]*$/ },
+  { open: /^[♪♫♬]/, hasClose: /^.[^]*[♪♫♬]/, close: /[♪♫♬][.,!?;:'"…-]*$/ },
+];
+// A span is at most this many items, opener included: an unmatched "(" in
+// real speech must not eat the rest of the transcript.
+const MAX_TAG_ITEMS = 6;
+
+/** Drops items inside split sound tags; `texts` are trimmed, in order. */
+function splitTagFlags(texts) {
+  const drop = new Array(texts.length).fill(false);
+  for (let i = 0; i < texts.length; i++) {
+    if (drop[i]) continue;
+    const o = OPENERS.find((x) => x.open.test(texts[i]) && !x.hasClose.test(texts[i]));
+    if (!o) continue;
+    for (let j = i + 1; j < texts.length && j < i + MAX_TAG_ITEMS; j++) {
+      if (o.close.test(texts[j])) {
+        for (let k = i; k <= j; k++) drop[k] = true;
+        break;
+      }
+    }
+  }
+  return drop;
+}
+
+/**
+ * Items that are speech: whole-item sound tags and tags split across items
+ * are dropped (the same rules for whisper and for YouTube captions). Order is
+ * kept.
+ * @template T
+ * @param {T[]} items
+ * @param {(item: T) => string} textOf trimmed text of an item
+ * @returns {T[]}
+ */
+function dropNonSpeech(items, textOf) {
+  const kept = items.filter((it) => !NON_SPEECH.test(textOf(it)));
+  const drop = splitTagFlags(kept.map(textOf));
+  return kept.filter((_, i) => !drop[i]);
+}
+
+const STACK_SEC = 0.03;
+const STACK_WORD_SEC = 0.35;
+
+/**
+ * whisper sometimes puts several words on one ~10 ms stamp, so a caption group
+ * would flash at once. A run of words whose starts are within 0.03 s of the
+ * run's first gets the span from that start to the next word's start (or, at
+ * the end of the list, the run's last end), at most 0.35 s a word, split
+ * evenly. The run never passes the next word. A word does not move earlier
+ * than it started, except by a millisecond or two when the gap before the next
+ * word is that tight. `words` is sorted; mutated.
+ */
+function spreadStacked(words) {
+  let i = 0;
+  while (i < words.length) {
+    let j = i + 1;
+    while (j < words.length && words[j].s - words[i].s <= STACK_SEC + 1e-9) j++;
+    const n = j - i;
+    if (n >= 2) {
+      const start = words[i].s;
+      const hasNext = j < words.length;
+      const after = hasNext ? words[j].s : Infinity;
+      // With a next word the run ends at that word's start, never past it;
+      // the run's last source end only matters when the run ends the list.
+      const end = Math.min(hasNext ? after : words[j - 1].e, start + STACK_WORD_SEC * n);
+      // The run must fit below `after` at 1 ms a word; if not, leave it be.
+      if (!hasNext || after - start >= n * 0.001) {
+        const step = (end - start) / n;
+        const starts = [];
+        for (let k = 0; k < n; k++) {
+          // even split first, then the floor (never earlier than the word's own
+          // start), then clamp into the gap so every later word keeps 1 ms,
+          // then strictly increasing.
+          let s = Math.max(round3(start + k * step), words[i + k].s);
+          s = Math.min(s, round3(after - (n - k) * 0.001));
+          if (k > 0 && s <= starts[k - 1]) s = round3(starts[k - 1] + 0.001);
+          starts.push(s);
+        }
+        for (let k = 0; k < n; k++) {
+          const w = words[i + k];
+          w.s = starts[k];
+          w.e = k < n - 1 ? starts[k + 1] : Math.max(round3(end), round3(starts[k] + 0.001));
+        }
+      }
+    }
+    i = j;
+  }
+  return words;
+}
 
 /**
  * Words from whisper.cpp `-oj` JSON (`offsets` are milliseconds). Non-speech
- * items (`[BLANK_AUDIO]`, `(music)`, `♪`) are dropped.
+ * items (`[BLANK_AUDIO]`, `(music)`, `♪`) and sound tags split across items
+ * (`(upbeat` + `music)`) are dropped; words stacked on one timestamp are
+ * spread out.
  * @param {object} j parsed whisper JSON
  * @param {number} [offsetSec] added to every time, for a cut that starts later
  * @returns {Word[]}
  */
 export function wordsFromWhisper(j, offsetSec = 0) {
   const items = Array.isArray(j?.transcription) ? j.transcription : [];
-  const out = [];
+  const kept = [];
   for (const it of items) {
     const text = typeof it?.text === 'string' ? it.text.trim() : '';
     const from = num(it?.offsets?.from);
     const to = num(it?.offsets?.to);
-    if (!text || NON_SPEECH.test(text) || from === null || to === null) continue;
+    if (!text || from === null || to === null) continue;
+    kept.push({ text, from, to });
+  }
+  const out = dropNonSpeech(kept, (x) => x.text).map(({ text, from, to }) => {
     const s = round3(offsetSec + from / 1000);
     let e = round3(offsetSec + to / 1000);
     if (e <= s) e = round3(s + MIN_WORD_SEC);
-    out.push({ w: text, s, e });
-  }
-  return out.sort((a, b) => a.s - b.s);
+    return { w: text, s, e };
+  });
+  return spreadStacked(out.sort((a, b) => a.s - b.s));
 }
 
 /**
@@ -143,4 +267,62 @@ export function transcriptChunks(words, opts = {}) {
     const to = i === chunks.length - 1 ? Math.min(from + chunkSec, Math.ceil(c.end)) : from + chunkSec;
     return [`## Part ${i + 1} (${stamp(from)}–${stamp(to)})`, ...c.lines].join('\n');
   });
+}
+
+/**
+ * The text of `transcript.md`: the chunks of `transcriptChunks` joined by a
+ * blank line, ending with a newline. `text` is '' when there are no words.
+ * @param {Word[]} words
+ * @param {Parameters<typeof transcriptChunks>[1]} [opts]
+ * @returns {{ text: string, chunks: number }}
+ */
+export function transcriptMarkdown(words, opts) {
+  const chunks = transcriptChunks(words, opts);
+  return { text: chunks.length ? chunks.join('\n\n') + '\n' : '', chunks: chunks.length };
+}
+
+const LINE_MAX_SEC = 8;
+const PAUSE_SEC = 0.7;
+const AROUND_SPAN_SEC = 30;
+
+const minSec = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+const sec2 = (s) => (Math.round(s * 100) / 100).toFixed(2);
+
+/**
+ * The words near a time, as the lines the agent reads to set a clip edge:
+ * every word overlapping [around - span, around + span] (from clamped at 0),
+ * grouped into lines of `[m:ss] text (start-end)`, the seconds exact to 0.01.
+ * A line closes after a word ending a sentence, at a pause over 0.7 s, or once
+ * it is 8 s long. Blank and malformed words are skipped; `words` need not be
+ * sorted.
+ * @param {Word[]} words
+ * @param {number} around seconds
+ * @param {number} [span] seconds each side, default 30
+ * @returns {{ lines: string[], from: number, to: number }}
+ */
+export function wordsAround(words, around, span = AROUND_SPAN_SEC) {
+  const from = Math.max(0, around - span);
+  const to = around + span;
+  const list = words
+    .filter((x) => x && Number.isFinite(x.s) && Number.isFinite(x.e) && String(x.w ?? '').trim())
+    .filter((x) => x.e > from && x.s < to)
+    .sort((a, b) => a.s - b.s);
+  const lines = [];
+  let cur = null;
+  const close = () => {
+    if (cur) lines.push(`[${minSec(cur.s)}] ${cur.text.join(' ')} (${sec2(cur.s)}-${sec2(cur.e)})`);
+    cur = null;
+  };
+  for (const x of list) {
+    if (cur) {
+      const sentenceEnd = /[.?!]["')\]]*$/.test(String(cur.last.w).trim());
+      if (sentenceEnd || x.s - cur.last.e > PAUSE_SEC || x.s - cur.s >= LINE_MAX_SEC) close();
+    }
+    if (!cur) cur = { s: x.s, e: x.e, text: [], last: x };
+    cur.text.push(String(x.w).trim());
+    cur.e = Math.max(cur.e, x.e);
+    cur.last = x;
+  }
+  close();
+  return { lines, from, to };
 }

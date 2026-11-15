@@ -1,7 +1,7 @@
 {
   "from": "boqo-ai/boqo-clips",
-  "commit": "caa50b2b8becc293386fc9f6bb39b5288d820df7",
-  "hash": "45b03836a5648df950c919a8840152b04a064b86df3daf982689b88b04934db9",
+  "commit": "2741352b05f0a2bbc4e2c263b21d7b0b3951b2a7",
+  "hash": "fedf33ed82cdb6980a68b5a9f30294a3b598b78397120cfda8eafd98328c3891",
   "files": [
     "engine/",
     "tools/doctor.mjs",
@@ -10,6 +10,7 @@
     "tools/picks-check.mjs",
     "tools/brand.mjs",
     "tools/asr.mjs",
-    "tools/boqo-upload.mjs"
+    "tools/boqo-upload.mjs",
+    "tools/transcript.mjs"
   ]
 }
