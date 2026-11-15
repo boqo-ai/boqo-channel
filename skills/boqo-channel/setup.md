@@ -2,7 +2,8 @@
 
 Runs after `onboarding.md` on the first `/boqo-channel`, and on `/boqo-channel setup` (SKILL.md → Setup). It writes
 `<home>/boqo-channel/config.json`. On a change ("add @x", "3 a day for @y", "post them automatically"), ask only
-about what the person named, and keep every other key as it is.
+about what the person named, and keep every other key as it is. Paths go into commands written out in full, in
+double quotes (SKILL.md → Overview).
 
 Ask in as few messages as you can: the channels first, then the rest in one message.
 
@@ -12,7 +13,7 @@ Which YouTube channels to clip every day: an @handle, a channel link or a `UC…
 Check each one, one at a time:
 
 ```sh
-node ~/.boqo-channel/tools/channel.mjs new "<channel>" --max 1
+node "$HOME/.boqo-channel/tools/channel.mjs" new "<channel>" --max 1
 ```
 
 - `{"videos": [{title, duration, …}]}`: name its newest long video and its length, so the person sees it is the
@@ -31,9 +32,8 @@ nothing.
 
 ## 3. Posts a day
 
-For each channel with accounts: how many posts a day, at least and at most, to each of its accounts. 1 to 3 unless
-they say otherwise; each from 1 to 8, the least not above the most. Say once that posts go out between 09:00 and
-21:00, spread across the day.
+For each channel with accounts: up to how many posts a day, to each of its accounts. 3 unless they say otherwise,
+from 1 to 8. Say once that each run plans one day: its posts go out between 09:00 and 21:00, spread across that day.
 
 ## 4. The run time
 
@@ -47,12 +47,12 @@ to N clips a day in all. Without accounts, `"ask"`, and ask nothing.
 
 ## 6. The file
 
-`mkdir -p <home>/boqo-channel`, then write `<home>/boqo-channel/config.json`:
+`mkdir -p "<home>/boqo-channel"`, then write `<home>/boqo-channel/config.json`:
 
 ```json
 {
   "channels": [
-    { "channel": "<as typed>", "accounts": [{ "id": "<id from list_accounts>", "handle": "@name" }], "perDay": { "min": 1, "max": 3 } }
+    { "channel": "<as typed>", "accounts": [{ "id": "<id from list_accounts>", "handle": "@name" }], "perDay": { "max": 3 } }
   ],
   "runAt": "21:13",
   "posting": "ask",

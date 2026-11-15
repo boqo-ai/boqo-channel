@@ -1,5 +1,7 @@
 #!/usr/bin/env node
-// channel.mjs new <channel> [--max 3]   list new long videos, newest first; "first": true when nothing is marked yet
+// channel.mjs new <channel> [--max 3] [--first]
+//   list new long videos, newest first; "first": true when the channel has no state yet. With --first, a first
+//   run returns only the newest long video and marks the rest of the listing done ("marked": N).
 // channel.mjs mark <channel> <videoId>  remember a video as done
 import { runCli } from "../lib/channel.mjs";
 

@@ -42,7 +42,7 @@ test("bad input exits 1 with one error line", () => {
   }
 });
 
-test("schedule.mjs is this repo's own tool, not part of the vendored engine", () => {
+test("schedule.mjs, plan.mjs and channel.mjs are this repo's own tools, not part of the vendored engine", () => {
   const engine = JSON.parse(readFileSync(new URL("../engine/ENGINE.json", import.meta.url), "utf8"));
-  assert.ok(!engine.files.includes("tools/schedule.mjs"));
+  for (const tool of ["tools/schedule.mjs", "tools/plan.mjs", "tools/channel.mjs"]) assert.ok(!engine.files.includes(tool), tool);
 });

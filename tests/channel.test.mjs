@@ -162,6 +162,51 @@ test("runCli new: lists, marks nothing, honours max and state", async () => {
   assert.deepEqual(again.videos.map((v) => v.id), ["b", "c", "d"].map((c) => c.repeat(11)));
 });
 
+test("runCli new --first: a first run returns only the newest long video and marks the rest of the listing", async () => {
+  const home = tmp();
+  const ids = Array.from({ length: 20 }, (_, i) => `v${String(i).padStart(10, "0")}`);
+  const entries = [
+    entry("short000001", { duration: 40 }), // a Short is newest: not clipped, still marked
+    entry("upcoming001", { live_status: "is_upcoming", duration: null }), // not out yet: never marked
+    entry("islive00001", { live_status: "is_live", duration: null }),
+    ...ids.map((id) => entry(id)),
+  ];
+  const calls = [];
+  const fetchFlat = async (args) => { calls.push(args); return { entries }; };
+  const out = await runCli(["new", "@x", "--max", "3", "--first"], { home, fetchFlat });
+  assert.equal(out.first, true);
+  assert.deepEqual(out.videos.map((v) => v.id), [ids[0]]);
+  assert.equal(out.marked, 20); // the Short and v1…v19, not the newest, not live or upcoming
+  assert.equal(calls.length, 1, "one listing only");
+  assert.equal(calls[0][calls[0].indexOf("--playlist-end") + 1], "100", "a first run lists deep");
+  const seen = loadState(statePath("@x", home)).seen;
+  assert.ok(!seen.includes(ids[0]) && !seen.includes("upcoming001") && !seen.includes("islive00001"));
+  for (const id of ["short000001", ...ids.slice(1)]) assert.ok(seen.includes(id), id);
+  // the next run: no longer first, and only the newest (still not done) comes back
+  const again = await runCli(["new", "@x", "--max", "3", "--first"], { home, fetchFlat });
+  assert.equal(again.first, false);
+  assert.equal(calls[1][calls[1].indexOf("--playlist-end") + 1], "15");
+  assert.equal(again.marked, undefined);
+  assert.deepEqual(again.videos.map((v) => v.id), [ids[0]]);
+});
+
+test("runCli new --first on a first run with no long video still marks the listing", async () => {
+  const home = tmp();
+  const fetchFlat = async () => ({ entries: [entry("short000001", { duration: 30 }), entry("short000002", { duration: 50 })] });
+  const out = await runCli(["new", "@x", "--first"], { home, fetchFlat });
+  assert.deepEqual(out, { channel: "https://www.youtube.com/@x/videos", first: true, videos: [], marked: 2 });
+  assert.equal((await runCli(["new", "@x", "--first"], { home, fetchFlat })).first, false);
+});
+
+test("runCli new without --first marks nothing on a first run", async () => {
+  const home = tmp();
+  const fetchFlat = async () => ({ entries: ["a", "b"].map((c) => entry(c.repeat(11))) });
+  const out = await runCli(["new", "@x"], { home, fetchFlat });
+  assert.equal(out.first, true);
+  assert.equal(out.videos.length, 2);
+  assert.ok(!existsSync(statePath("@x", home)));
+});
+
 test("runCli mark: writes state and reports the count", async () => {
   const home = tmp();
   const a = await runCli(["mark", "@x", "vid00000001"], { home });
@@ -177,6 +222,7 @@ test("runCli rejects bad arguments", async () => {
   await assert.rejects(runCli(["new"], { home }), /channel/i);
   await assert.rejects(runCli(["new", "@x", "--max", "0"], { home }), /max/i);
   await assert.rejects(runCli(["new", "@x", "--max", "abc"], { home }), /max/i);
+  await assert.rejects(runCli(["new", "@x", "--max", "21"], { home }), /1 to 20/); // deeper than a first run marks
   await assert.rejects(runCli(["mark", "@x"], { home }), /video/i);
   await assert.rejects(runCli(["frobnicate", "@x"], { home }), /usage|unknown/i);
 });
