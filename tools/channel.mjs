@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// channel.mjs new <channel> [--max 3]   list new long videos, newest first
+// channel.mjs new <channel> [--max 3]   list new long videos, newest first; "first": true when nothing is marked yet
 // channel.mjs mark <channel> <videoId>  remember a video as done
 import { runCli } from "../lib/channel.mjs";
 

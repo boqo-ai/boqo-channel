@@ -150,6 +150,7 @@ test("runCli new: lists, marks nothing, honours max and state", async () => {
   const fetchFlat = async (args) => { calls.push(args); return flat; };
   const out = await runCli(["new", "@LexFridman", "--max", "2"], { home, fetchFlat });
   assert.equal(out.channel, "https://www.youtube.com/@LexFridman/videos");
+  assert.equal(out.first, true, "no state yet: the channel's first run");
   assert.deepEqual(out.videos.map((v) => v.id), ["a".repeat(11), "b".repeat(11)]);
   assert.deepEqual(Object.keys(out.videos[0]), ["id", "title", "url", "duration"]);
   assert.ok(calls[0].includes("--js-runtimes") && calls[0].at(-1) === out.channel);
@@ -157,6 +158,7 @@ test("runCli new: lists, marks nothing, honours max and state", async () => {
   assert.ok(!existsSync(statePath("@LexFridman", home)));
   await runCli(["mark", "@LexFridman", "a".repeat(11)], { home, fetchFlat });
   const again = await runCli(["new", "@LexFridman"], { home, fetchFlat });
+  assert.equal(again.first, false);
   assert.deepEqual(again.videos.map((v) => v.id), ["b", "c", "d"].map((c) => c.repeat(11)));
 });
 
