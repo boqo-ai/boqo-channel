@@ -73,4 +73,5 @@ to N clips a day in all. Without accounts, `"ask"`, and ask nothing.
 - Keep `timer` when the file already has it.
 
 Then one line: the channels, their accounts and posts a day, the run time and the rule. Then the daily run, now
-(SKILL.md → The daily run): its report ends with the timer (SKILL.md → Trigger).
+(SKILL.md → The daily run). The timer question comes by SKILL.md → Trigger's one-question rule: never beside "Post
+these?".

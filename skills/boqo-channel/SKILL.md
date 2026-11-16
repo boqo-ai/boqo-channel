@@ -75,7 +75,8 @@ EOF
   A tool's error stops that video or that channel, never the whole run: note it in the error's words for the report
   and go on with the next. Do not work around a tool with your own ffmpeg or yt-dlp commands, except the ones these
   files give. A `plan.mjs` error that calls a plan damaged (`move it aside`): `mv "<plan>" "<plan>.bad"`, never
-  delete it; say its posts are not made, and go on.
+  delete it; say its posts are not made, and go on. A plan you have just written that fails `validate` is not moved
+  aside: write it again, and validate again (step 5).
 - **Never post without the rule** in `config.json`. With `ask` (the default), the posts wait for the person's yes.
 - **One at a time:** the lock (The daily run, step 1) is taken before a run and before posting a plan, and released
   on every way out of either. A clip is posted once: `plan.json` stamps each post, and `post_video` goes once per item,
@@ -145,15 +146,16 @@ what the person names.
 4. **Each video,** channel by channel, newest first. `mkdir -p "<video>"`.
    0. **Its earlier tries.** `grep -F "| <video id> |" "<home>/boqo-channel/runs.md"` prints its lines in the log
       (none, or no file: its first try). Each `started` line begins a try, and the video's next line says how it
-      ended: `failed: …`, `no captions`, `limited` (does not count), or none at all (the run stopped there, which
-      counts as failed). Two failed tries already: mark it (step 4.8), note "failed twice" for the report, and go on
+      ended: `failed: …`; `no captions` or `limited`, neither of which counts as failed; or none at all (the run
+      stopped there, which counts as failed). Two failed tries already: mark it (step 4.8), note "failed twice" for the report, and go on
       with the next video. Otherwise append its `started` line (The log).
    1. **Info.** `node "$HOME/.boqo-channel/tools/fetch.mjs" info "<url>" --dir "<video>"` gives `{id, title,
       duration, captions, chunks}`, with no video download. With captions it writes `<video>/words.json` and
       `<video>/transcript.md`; `chunks` is how many parts the transcript has, read in order (step 4.3). Tell the
       person, in one line, the title, the length and how many clips you will pick (`select.md` → How many).
    2. **No captions** (`"captions": "none"`): YouTube may not have made them yet. Append its `no captions` line. When
-      step 4.0 showed an earlier `no captions` line, it still has none a day later: mark it (step 4.8). Otherwise
+      step 4.0 showed a `no captions` line dated before today, it still has none a day later: mark it (step 4.8). A
+      line from today (a rerun) does not count. Otherwise
       leave it unmarked, and tomorrow's run looks again. Note it for the report either way, and go on with the next
       video. Its `info.json` stays, for A video with no captions.
    3. **Pick.** Read `select.md` (once a run), then `<video>/transcript.md` one part at a time (`grep -n '^## Part'
@@ -290,8 +292,9 @@ From step 6 under `auto`, or when the person answers the report's question, in t
      answer to that starts Posting the plan again.
    - A no, or no answer: `node "$HOME/.boqo-channel/tools/plan.mjs" skip "<plan>" all`, its `posting` line (The
      log), release the lock, and stop: the clips stay on disk. Then the timer question, when it is still to come
-     (Trigger).
-   - A yes to some ("not the second one"): `plan.mjs skip "<plan>" <n>` for each one left out.
+     (Trigger). A `skip` that fails: A failed stamp (step 4).
+   - A yes to some ("not the second one"): `plan.mjs skip "<plan>" <n>` for each one left out (one that fails: A
+     failed stamp, step 4).
 3. **The times.** When the first open item's time has already passed (the yes came late), plan the open items again
    (step 5, from now), write the new times into their `when`, keeping every other key, and say the new times.
 4. **Post them** by `post.md`: Before the first clip, once; then Each clip, for every open item in plan order. What
@@ -309,11 +312,18 @@ From step 6 under `auto`, or when the person answers the report's question, in t
      reworded one post.md step 2 gave), within a day of its `when` (`scheduledAt` is UTC), means it went: stamp it
      posted. None: `plan.mjs skip "<plan>" <n>`, so no later yes posts it, and tell the person this clip's post is
      unclear and not in boqo's schedule; they can post it again by asking. Then the next clip.
-   - **The stamp fails** (`plan.mjs posted` gives an error): stop posting this plan, and tell the person which clips
-     went and that the rest are not posted, with the error's words. Never go on posting with a plan that cannot
-     record what went.
+
+   **A failed stamp** (`plan.mjs posted` or `skip` gives an error, in any case above or in step 2): run it once more.
+   When it fails again, stop posting this plan and move it aside, `mv "<plan>" "<plan>.bad"`: no later yes finds it
+   then. Tell the person which clips went and that the rest are not posted, with the error's words. When the `mv`
+   fails too, tell them plainly never to answer yes to this plan again, and name the clips that went. Never go on
+   posting with a plan that cannot record what went.
 5. Its `posting` line goes into `runs.md` (The log), one line tells the person what went where and when, and the lock
    is released. Then the timer question, when it is still to come (Trigger).
+
+**A skipped item, later:** only on "post <title> anyway", for that item alone: the lock, a fresh `post_video` by
+`post.md`, then `plan.mjs posted "<plan>" <n>`, `<plan>` the plan that holds it (posted replaces the skip). A bare yes
+never posts a skipped item.
 
 ## Trigger
 
@@ -358,11 +368,13 @@ The report names it. When the person asks to clip it, transcribe it here. It is 
    ```
    `{"words": N, …}` in `<video>/asr.json` is done; `{"error": …}` stops it. `"englishOnly": true` is a model that
    hears every video as English: when this one is not in English (`<video>/info.json`'s `language`, the title, the
-   person), say so, and offer the multilingual model (about 150 MB). On a yes, then run whisper again:
+   person), say so, and offer the multilingual model (about 150 MB). On a yes:
    ```sh
    mkdir -p "<home>/models" && curl -L -o "<home>/models/ggml-base.bin" \
      "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin"
    ```
+   then run whisper again with the video's language, `--lang <code>` (`--lang ru`) before `--out`: with a language
+   other than English it takes a multilingual model.
 4. The transcript, with the most-replayed marks (`--heat`) when `<video>/info.json` is there:
    ```sh
    node "$HOME/.boqo-channel/tools/transcript.mjs" --words "<video>/words.json" --out "<video>/transcript.md" \

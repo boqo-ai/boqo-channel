@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -83,6 +83,18 @@ test("pending is the newest plan only: an older plan is never offered again", ()
   writeRun(home2, "20261114-2113", [item(1)]);
   writeRun(home2, "20261115-2113", []);
   assert.deepEqual(pending(home2), { plan: null, items: [], lines: [] });
+});
+
+test("a newest plan moved aside to plan.json.bad hides the older plans too", () => {
+  const home = tmp();
+  writeRun(home, "20261114-2113", [item(1)]); // an older plan with an open item
+  const newer = writeRun(home, "20261115-2113", [item(1), item(2)]);
+  stamp(newer, "1", "posted", T1); // its stamp then failed for item 2's post: the plan is moved aside
+  renameSync(newer, `${newer}.bad`);
+  assert.deepEqual(pending(home), { plan: null, items: [], lines: [] });
+  // a later run's plan is the newest again
+  const later = writeRun(home, "20261116-2113", [item(1)]);
+  assert.equal(pending(home).plan, later);
 });
 
 test("pending lists its open items in the report's words, to ask about them again", () => {
