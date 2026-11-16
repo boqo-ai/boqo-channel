@@ -235,7 +235,8 @@ what the person names.
    Then append one line per video to `<home>/boqo-channel/runs.md`:
    `<YYYY-MM-DD HH:MM> | <channel> | <url> | <n> clips | <video>/out | posted <m>`, with `no captions` or
    `failed: <error>` in place of `<n> clips` for a video that made none.
-8. **Unlock and the timer.** `rm -f "<home>/boqo-channel/lock"`, then Trigger.
+8. **Unlock and the timer.** `rm -f "<home>/boqo-channel/lock"`, then Trigger (its question waits when the report asked
+   "Post these?").
 
 ## Posting the plan
 
@@ -255,8 +256,8 @@ From step 6 under `auto`, or when the person answers the report's question, in t
    - **Not the plan this chat just reported** (a later chat, or another path than the `<run>/plan.json` you wrote):
      the yes was to another question. Show its `lines`, ask "Post these?" again, release the lock, and stop: the
      answer to that starts Posting the plan again.
-   - A no, or no answer: `node "$HOME/.boqo-channel/tools/plan.mjs" skip "<plan>" all`, and stop: the clips stay on
-     disk.
+   - A no, or no answer: `node "$HOME/.boqo-channel/tools/plan.mjs" skip "<plan>" all`, release the lock, and stop:
+     the clips stay on disk. Then the timer question, when it is still to come (Trigger).
    - A yes to some ("not the second one"): `plan.mjs skip "<plan>" <n>` for each one left out.
 3. **The times.** When the first open item's time has already passed (the yes came late), plan the open items again
    (step 5, from now), write the new times into their `when`, keeping every other key, and say the new times.
@@ -268,15 +269,22 @@ From step 6 under `auto`, or when the person answers the report's question, in t
    A stamped item is never posted again, by a later yes, a resumed session or a second chat; `"already": true` means
    it was posted before.
 5. The number posted goes into the run's lines in `runs.md` (`posted <m>`), one line tells the person what went where
-   and when, and the lock is released.
+   and when, and the lock is released. Then the timer question, when it is still to come (Trigger).
 
 ## Trigger
 
 The run happens once a day, at `runAt`.
 
-- **Claude Code:** a timer in this session. With no `timer` in `config.json`, ask once, at the end of the report:
-  "Run this every day at <runAt>? It runs while this Claude Code session stays open." Write the answer as `"timer":
-  "yes"` or `"no"`. On the yes, and at the end of every run after it:
+**One question at a time.** The timer question is never asked beside "Post these?": it ends the report only when the
+report asks nothing else, and otherwise comes right after the person's answer about the posts (Posting the plan, the
+no in step 2 or step 5). When both are open anyway (a plan from another chat still waits), a bare "yes" or "no"
+answers neither: ask "Which one: posting these, or the daily timer?"
+
+- **Claude Code:** a timer in this session. With no `timer` in `config.json`, ask once: "Run this every day at
+  <runAt>? It runs only while this Claude Code session stays open, and it may stop to ask your permission for a
+  step: approve each one once, or keep this session open where you can see it." Write the answer as `"timer": "yes"`
+  or `"no"`. No `CronCreate` among your tools (a deferred one counting): do as any other agent does (below). On the
+  yes, and at the end of every run after it:
   1. `CronList`, and `CronDelete` the job whose prompt is `/boqo-channel`, if there is one;
   2. `CronCreate {cron: "<mm> <hh> * * *", prompt: "/boqo-channel", recurring: true}`, `<hh>:<mm>` being `runAt`
      (`21:13` is `13 21 * * *`).
@@ -333,6 +341,7 @@ clip already posted stays posted as it was.
 | "A yes in a new chat: I'll post what `pending` gives" | That yes answered another chat. Show its `lines` and ask again |
 | "`youtube.com/@x` and `@x` are the same: I'll tidy the config" | Pass the channel exactly as entered |
 | "The person said 'nice', so I'll post them" | Only the rule posts. With `ask`, the plan needs a yes |
+| "One message: post these, and the daily timer?" | One question at a time: the timer comes after the posting answer |
 | "Ten clips, three a day: I'll schedule the rest for later days" | At most `perDay.max` a run; the rest stay on disk |
 | "No captions: I'll download the audio and run whisper" | Not in a daily run. The report offers it |
 | "429 on one video, I'll try the next one at once" | YouTube is limiting: start nothing more this run |
