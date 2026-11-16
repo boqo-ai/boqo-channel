@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { countPosted, localPath, pending, runCli, stamp, validatePlan } from "../lib/plan.mjs";
@@ -213,7 +213,7 @@ test("count ignores a moved-aside plan it cannot read, and a skipped item in one
   assert.equal(countPosted("2026-11-16", home).posted, 1);
 });
 
-test("runCli takes the five commands and nothing else", () => {
+test("runCli takes the six commands and nothing else", () => {
   const home = tmp();
   const p = writeRun(home, "20261115-2113", [item(1)]);
   assert.deepEqual(runCli(["pending"], { home }), { plan: p, items: [1], lines: ["2026-11-16 09:00 · @a · Clip 1"] });
@@ -243,4 +243,92 @@ test("CLI prints one JSON line, and one error line with exit 1", () => {
   assert.equal(bad.status, 1);
   assert.equal(bad.stdout.trim().split("\n").length, 1);
   assert.match(JSON.parse(bad.stdout).error, /no item/);
+});
+
+// --- the plan takes its clips in the final order from each video's clips.json (rendered ones only) -------------------
+
+// A clips.json row as boqo-clips' tools leave it: n in final order after `clips.mjs order`, file and thumb relative to
+// the video folder, a judgment once the stranger has read it.
+const row = (n, score, extra = {}) => ({
+  n, start: n * 100, end: n * 100 + 40, title: `Clip ${n}`, hook: n % 2 ? `Hook ${n}` : null, score,
+  replay: null, standalone: null, judgment: null, rendered: false, ...extra,
+});
+const renderedRow = (n, score, extra = {}) => row(n, score, { rendered: true, file: `out/clip-${String(n).padStart(2, "0")}.mp4`, thumb: `out/clip-${String(n).padStart(2, "0")}.jpg`, ...extra });
+function writeVideo(home, id, clips) {
+  const dir = join(home, "boqo-channel", "runs", "20261115-2113", id);
+  mkdirSync(join(dir, "out"), { recursive: true });
+  writeFileSync(join(dir, "clips.json"), JSON.stringify({ clips }, null, 2));
+  return dir;
+}
+
+test("12 kept, 10 rendered, perDay.max 3: the plan takes the first 3 rendered clips in final order", () => {
+  const home = tmp();
+  // Ten rendered, two kept but not rendered (the best scores of all: they are not eligible, and sort after the
+  // rendered ones). The array is reversed and its `n` is the pre-render order: the stranger gave clip 7 a 5, which
+  // outweighs any score, so the final order is 7, then by score 2 (95), 9 (85), 4 (80), ... and 6 (50) last.
+  const clips = [
+    renderedRow(1, 70), renderedRow(2, 95, { judgment: { overall: 1, why: "w" } }), renderedRow(3, 60), renderedRow(4, 80),
+    renderedRow(5, 55), renderedRow(6, 50), renderedRow(7, 65, { judgment: { overall: 5, why: "w" } }), renderedRow(8, 52),
+    renderedRow(9, 85), renderedRow(10, 51), row(11, 99), row(12, 98),
+  ].reverse();
+  const video = writeVideo(home, "vid1", clips);
+  const r = runCli(["clips", video, "--max", "3"], { home });
+  assert.deepEqual(r.clips.map((c) => c.title), ["Clip 7", "Clip 2", "Clip 9"]);
+  assert.deepEqual(r.clips.map((c) => c.file), [7, 2, 9].map((n) => resolve(video, `out/clip-0${n}.mp4`)));
+  assert.equal(r.kept, 12);
+  assert.equal(r.rendered, 10);
+  assert.deepEqual(r.clips.map((c) => c.hook), ["Hook 7", null, "Hook 9"]);
+  // no --max: every rendered clip, still in that order, and never an unrendered one
+  const all = runCli(["clips", video], { home });
+  assert.equal(all.clips.length, 10);
+  assert.deepEqual(all.clips.slice(0, 4).map((c) => c.title), ["Clip 7", "Clip 2", "Clip 9", "Clip 4"]);
+  assert.equal(all.clips.at(-1).title, "Clip 6");
+  assert.ok(!all.clips.some((c) => c.title === "Clip 11" || c.title === "Clip 12"));
+});
+
+test("a clip that fails the stand-alone test goes last, whatever its score", () => {
+  const home = tmp();
+  const video = writeVideo(home, "vid1", [renderedRow(1, 90, { standalone: { v: 1, outcome: "fails", claim: "c", bridgeFromSec: null, contextLine: null, sha: null } }), renderedRow(2, 60), renderedRow(3, 70)]);
+  assert.deepEqual(runCli(["clips", video, "--max", "2"], { home }).clips.map((c) => c.title), ["Clip 3", "Clip 2"]);
+});
+
+test("several videos take turns, each in its own final order, the first video first", () => {
+  const home = tmp();
+  const a = writeVideo(home, "newer", [renderedRow(1, 90), renderedRow(2, 80), renderedRow(3, 70)]);
+  const b = writeVideo(home, "older", [renderedRow(1, 99), renderedRow(2, 60)]);
+  const titles = (r) => r.clips.map((c) => `${basename(c.video)}:${c.title}`);
+  assert.deepEqual(titles(runCli(["clips", a, b, "--max", "4"], { home })), ["newer:Clip 1", "older:Clip 1", "newer:Clip 2", "older:Clip 2"]);
+  assert.deepEqual(titles(runCli(["clips", a, b], { home })), ["newer:Clip 1", "older:Clip 1", "newer:Clip 2", "older:Clip 2", "newer:Clip 3"]);
+});
+
+test("a video with nothing rendered gives no clips, and a clips.json that cannot be read is an error naming it", () => {
+  const home = tmp();
+  const none = writeVideo(home, "none", [row(1, 80)]);
+  assert.deepEqual(runCli(["clips", none], { home }), { clips: [], kept: 1, rendered: 0 });
+  const missing = join(home, "boqo-channel", "runs", "x", "gone");
+  assert.throws(() => runCli(["clips", missing], { home }), /no clips\.json at .*gone/);
+  const bad = writeVideo(home, "bad", []);
+  writeFileSync(join(bad, "clips.json"), "{nope");
+  assert.throws(() => runCli(["clips", bad], { home }), /clips\.json is not valid JSON/);
+  assert.throws(() => runCli(["clips", none, "--max", "0"], { home }), /--max/);
+  assert.throws(() => runCli(["clips"], { home }), /usage/);
+});
+
+test("a rendered row with no file is an error, not a clip the plan cannot post", () => {
+  const home = tmp();
+  const video = writeVideo(home, "v", [renderedRow(1, 80, { file: undefined })]);
+  assert.throws(() => runCli(["clips", video], { home }), /clip 1 is rendered but has no file/);
+});
+
+test("the clips command prints one JSON line from the CLI, and its error ends with exit 1", () => {
+  const home = tmp();
+  const video = writeVideo(home, "v", [renderedRow(1, 80), renderedRow(2, 90)]);
+  const env = { ...process.env, BOQO_HOME: home };
+  const ok = spawnSync(process.execPath, [TOOL, "clips", video, "--max", "1"], { env, encoding: "utf8" });
+  assert.equal(ok.status, 0, ok.stderr);
+  assert.equal(ok.stdout.trim().split("\n").length, 1);
+  assert.deepEqual(JSON.parse(ok.stdout).clips.map((c) => c.title), ["Clip 2"]);
+  const bad = spawnSync(process.execPath, [TOOL, "clips", join(home, "nope")], { env, encoding: "utf8" });
+  assert.equal(bad.status, 1);
+  assert.match(JSON.parse(bad.stdout).error, /no clips\.json/);
 });

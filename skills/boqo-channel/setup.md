@@ -61,12 +61,15 @@ to N clips a day in all. Without accounts, `"ask"`, and ask nothing.
   ],
   "runAt": "21:13",
   "posting": "ask",
-  "maxVideosPerRun": 3
+  "maxVideosPerRun": 3,
+  "transcript": "local"
 }
 ```
 
 - `posting` is `"ask"` or `{"auto": N}`.
 - `maxVideosPerRun` is 3, and 1 to 5 on the person's ask only.
+- `transcript` is `"local"` (the default). It becomes `"boqo"` only when the person asks for boqo to transcribe
+  videos that have no captions, which spends credits (SKILL.md → Rules); each run asks once before using it.
 - `handle` is the text inside the `<data …>` tag `list_accounts` gave.
 - A removed channel is taken out of `channels`; its state stays in `<home>/boqo-channel/state/`, so adding it back
   carries on where it stopped.

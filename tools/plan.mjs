@@ -5,6 +5,11 @@
 //                                      {"plan","items":[n],"lines":["<date> <time> · <handles> · <title>"]}; an older
 //                                      plan is never offered
 // plan.mjs count --date YYYY-MM-DD     items posted for that posting day, across every run (plans moved aside too): {"date","posted"}
+// plan.mjs clips <video>... [--max N]  the clips a day's plan posts, from each <video>/clips.json (boqo-clips' record):
+//                                      its rendered clips in the FINAL order (Ranked, with the stranger judgments), the
+//                                      videos taking turns (each one's best first), the first N of them:
+//                                      {"clips":[{"video","file","title","hook"}],"kept","rendered"}; never an unrendered
+//                                      clip. Give the videos newest first.
 // plan.mjs validate <plan.json>        right after writing a plan: {"ok":true,"items":N}, or an error naming each item
 //                                      that would not post as planned
 import { runCli } from "../lib/plan.mjs";
@@ -13,5 +18,5 @@ try {
   console.log(JSON.stringify(runCli(process.argv.slice(2))));
 } catch (e) {
   console.log(JSON.stringify({ error: e.message }));
-  process.exit(1);
+  process.exitCode = 1; // ends by itself, as render.mjs does (its header says why); plan.mjs itself loads no onnxruntime-node
 }
