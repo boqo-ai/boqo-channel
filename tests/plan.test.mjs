@@ -182,6 +182,37 @@ test("count is the items posted for one posting day, across runs", () => {
   assert.throws(() => countPosted("tomorrow", home), /YYYY-MM-DD/);
 });
 
+test("count includes posts stamped in a plan moved aside to plan.json.bad", () => {
+  // auto, perDay.max 3: a run posted 2 of its plan, then a failed stamp moved the plan aside
+  const home = tmp();
+  const a = writeRun(home, "20261116-0800", [item(1), item(2), item(3)]);
+  stamp(a, "1", "posted", T2);
+  stamp(a, "2", "posted", T2);
+  renameSync(a, `${a}.bad`);
+  const p = countPosted("2026-11-16", home).posted;
+  assert.equal(p, 2);
+  assert.equal(Math.max(0, 3 - p), 1); // a later run plans at most N - P = 1
+  assert.deepEqual(runCli(["count", "--date", "2026-11-16"], { home }), { date: "2026-11-16", posted: 2 });
+  // beside a live plan of a later run: both count, once each
+  const b = writeRun(home, "20261116-1300", [item(1), item(2)]);
+  stamp(b, "1", "posted", T2);
+  assert.equal(countPosted("2026-11-16", home).posted, 3);
+  // another day's posts in the moved-aside plan are not this day's
+  assert.equal(countPosted("2026-11-17", home).posted, 0);
+});
+
+test("count ignores a moved-aside plan it cannot read, and a skipped item in one", () => {
+  const home = tmp();
+  const a = writeRun(home, "20261116-0800", [item(1)]);
+  renameSync(a, `${a}.bad`);
+  writeFileSync(`${a}.bad`, "{ not json"); // the very damage it was moved aside for
+  const b = writeRun(home, "20261116-0900", [item(1), item(2)]);
+  stamp(b, "1", "posted", T2);
+  stamp(b, "2", "skipped", T2);
+  renameSync(b, `${b}.bad`);
+  assert.equal(countPosted("2026-11-16", home).posted, 1);
+});
+
 test("runCli takes the five commands and nothing else", () => {
   const home = tmp();
   const p = writeRun(home, "20261115-2113", [item(1)]);
