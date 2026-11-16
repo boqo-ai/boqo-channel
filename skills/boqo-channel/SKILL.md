@@ -87,7 +87,7 @@ EOF
 - **The person's language.** Answer in the language the person writes in. Titles and hooks are in the video's
   language. Files stay in English.
 - **Short messages:** one line as each video starts (its title, its length, the number of clips), and the report at
-  the end (step 7), at most 150 words. No tour of the tools unless asked.
+  the end (step 7), at most 150 words plus one line per post. No tour of the tools unless asked.
 - **Long steps run in the background:** sections and whisper always, render when the picks add up to more than 4
   minutes. Each writes its one line to a file in `<video>`, and is done when that file holds the line. In Claude Code
   use the shell tool's background mode, which tells you when the command ends; elsewhere end the command with ` &`
@@ -167,7 +167,7 @@ what the person names.
    4. **Check.**
       ```sh
       node "$HOME/.boqo-channel/tools/picks-check.mjs" "<video>/picks.json" --duration <duration> \
-        --words "<video>/words.json" --min 20 --max 60 --count-min 3 --count-max 10 > "<video>/checked.json"
+        --words "<video>/words.json" --min 20 --max 60 --count-min 1 --count-max 10 > "<video>/checked.json"
       ```
       `<duration>` is step 4.1's. Read `<video>/checked.json`.
       - `"ok": false`: fix each pick its `errors` name in `picks.json`, and check again.
@@ -175,7 +175,7 @@ what the person names.
         edge set from `--find` moves 0.05 s. One that moved more than 0.1 s either way (`|moved.s|` or `|moved.e|`)
         landed somewhere you did not choose: find its phrase again (step 4.3), set that edge in `picks.json`, and check
         again, once.
-      - A video under 3 minutes: `--count-min 1` (`select.md` → How many).
+      - `--count-min 1`: `select.md` → How many sets the count, and fewer picks are right when fewer moments pass.
    5. **Sections**, in the background (Rules):
       ```sh
       node "$HOME/.boqo-channel/tools/fetch.mjs" sections "<url>" --picks "<video>/checked.json" --dir "<video>" \
@@ -247,14 +247,19 @@ what the person names.
    nothing to post.
    - `ask`: post nothing now. The report shows the plan and asks (step 7).
    - `{"auto": N}`: Posting the plan, now; this run already holds the lock.
-7. **Report,** at most 150 words, in the person's language:
+7. **Report,** at most 150 words plus one line per post, in the person's language:
    - each channel in a line: the videos clipped (title, number of clips), any skipped with why (no captions yet,
      tried again tomorrow; no captions a day later; an error in its words; failed twice; YouTube's limit), and on its
      first run how many older videos were left alone (step 3's `marked`);
    - an unanswered plan skipped in step 5: one line, its number of posts dropped, their clips still on disk;
    - the posts: one line each, `<date> <time> · <handles> · <title>`, then, under `auto`, posted or the refusal;
      under `ask`, the one question: "Post these?";
-   - the clips' folder, `<run>`.
+   - the clips' folder, `<run>`, and what all runs take on disk, `du -sh "<home>/boqo-channel/runs"`. When
+     `find "<home>/boqo-channel/runs" -mindepth 1 -maxdepth 1 -type d -mtime +14` lists any run, add: "Runs older
+     than 14 days can go: say 'delete old runs'." On that ask only, with `<home>` written out in full:
+     ```sh
+     find "<home>/boqo-channel/runs" -mindepth 1 -maxdepth 1 -type d -mtime +14 -exec rm -rf {} +
+     ```
 8. **Unlock and the timer.** `rm -f "<home>/boqo-channel/lock"`, then Trigger (its question waits when the report asked
    "Post these?").
 
@@ -332,7 +337,10 @@ The report names it. When the person asks to clip it, transcribe it here. It is 
 (step 5 below), so no run clips it again.
 1. Run `node "$HOME/.boqo-channel/tools/doctor.mjs" --whisper optional`. When its `whisper` or `whisper-model` check
    fails, give that check's hint, and stop. Otherwise say how long it takes, about 13 s per minute of audio on an
-   8-core CPU with the small model, more on fewer cores, and wait for a yes.
+   8-core CPU with the small model, more on fewer cores, and wait for a yes. When `plan.mjs pending` names a plan
+   the person has not answered, say too that this video's plan replaces it (step 5) unless they answer it first.
+   After the yes, take the lock (The daily run, step 1; `file exists`: say a run or a posting is going, and to ask
+   again once it is done), and release it at the end and on every way out.
 2. The audio only, then `ls "<video>"` for its name (`audio.m4a`, or `audio.webm`):
    ```sh
    yt-dlp -q --js-runtimes node --no-playlist -f "ba[ext=m4a]/ba" -o "<video>/audio.%(ext)s" "<url>"
@@ -353,13 +361,20 @@ The report names it. When the person asks to clip it, transcribe it here. It is 
 
 ## Redo one clip
 
-"Clip 2 should start earlier", "another title": change only that pick in `<video>/picks.json` (a new edge by step
-4.3's `--find`) and check the whole set again (step 4.4). Write that one checked pick, as a one-item array, to `<video>/redo-picks.json`. Run step 4.5 with
+"Clip 2 should start earlier", "another title". Take the lock first (The daily run, step 1; `file exists`: say a run
+or a posting is going, and to ask again once it is done), and release it at the end and on every way out.
+
+Change only that pick in `<video>/picks.json` (a new edge by step 4.3's `--find`) and check the whole set again (step
+4.4). Write that one checked pick, as a one-item array, to `<video>/redo-picks.json`. Run step 4.5 with
 `--picks "<video>/redo-picks.json"` and its line going to `<video>/redo-sections.json`, then step 4.6 with
 `--sections "<video>/redo-sections.json" --picks "<video>/redo-picks.json" --out "<video>/redo"`. Move
 `<video>/redo/clip-01.mp4` over `<video>/out/clip-<k>.mp4` (`k` with two digits: `02`). Then delete
 `<video>/redo-picks.json`, `<video>/redo-sections.json` and the `<video>/redo` folder, and run step 4.7's cleanup. A
 clip already posted stays posted as it was.
+
+A new title goes into the plan too: when the newest plan (`plan.mjs pending`) has this clip in an open item (its
+`clip` is `<video>/out/clip-<k>.mp4`), write the new title into that item's `title`, keeping every other key, then
+`node "$HOME/.boqo-channel/tools/plan.mjs" validate "<plan>"`.
 
 ## Red flags
 
