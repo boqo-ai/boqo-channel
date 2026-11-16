@@ -261,13 +261,24 @@ From step 6 under `auto`, or when the person answers the report's question, in t
    - A yes to some ("not the second one"): `plan.mjs skip "<plan>" <n>` for each one left out.
 3. **The times.** When the first open item's time has already passed (the yes came late), plan the open items again
    (step 5, from now), write the new times into their `when`, keeping every other key, and say the new times.
-4. **Post them** by `post.md`: Before the first clip, once; then Each clip, for every open item in plan order. Right
-   after an item's `post_video` answers with no refusal, stamp it, before anything else:
-   ```sh
-   node "$HOME/.boqo-channel/tools/plan.mjs" posted "<plan>" <n>
-   ```
-   A stamped item is never posted again, by a later yes, a resumed session or a second chat; `"already": true` means
-   it was posted before.
+4. **Post them** by `post.md`: Before the first clip, once; then Each clip, for every open item in plan order. What
+   `post_video` answers decides the item, before anything else:
+   - **A clear answer,** the post made and its time: stamp it.
+     ```sh
+     node "$HOME/.boqo-channel/tools/plan.mjs" posted "<plan>" <n>
+     ```
+     A stamped item is never posted again, by a later yes, a resumed session or a second chat; `"already": true`
+     means it was posted before.
+   - **A refusal,** boqo's own sentence (post.md → Refusals): no stamp, as post.md says.
+   - **Anything else** (a timeout, a lost connection, an empty or cut-off reply, an error that is not boqo's
+     sentence): the post may have gone through. Never call `post_video` again for this item. Call
+     `list_schedule {accountId}` for each of its accounts: a post whose `clipTitle` is the item's title (or the
+     reworded one post.md step 2 gave), within a day of its `when` (`scheduledAt` is UTC), means it went: stamp it
+     posted. None: `plan.mjs skip "<plan>" <n>`, so no later yes posts it, and tell the person this clip's post is
+     unclear and not in boqo's schedule; they can post it again by asking. Then the next clip.
+   - **The stamp fails** (`plan.mjs posted` gives an error): stop posting this plan, and tell the person which clips
+     went and that the rest are not posted, with the error's words. Never go on posting with a plan that cannot
+     record what went.
 5. The number posted goes into the run's lines in `runs.md` (`posted <m>`), one line tells the person what went where
    and when, and the lock is released. Then the timer question, when it is still to come (Trigger).
 
@@ -348,4 +359,5 @@ clip already posted stays posted as it was.
 | "The opening is mid-line, I'll estimate where it falls" | Quote its first words and `--find` them |
 | "picks-check moved an edge 0.4 s, close enough" | More than 0.1 s either way (`\|moved.s\|` or `\|moved.e\|`): find its phrase again and set it |
 | "The tool failed, I'll write my own ffmpeg line" | Note the error, and go on with the next video |
+| "`post_video` timed out, I'll call it again" | It may have posted. `list_schedule` decides; never a second `post_video` |
 | "`RUN=…` once, then `$RUN` in every command" | The variable is gone in the next command. Write the path out |
