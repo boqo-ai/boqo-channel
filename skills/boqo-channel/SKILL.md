@@ -130,7 +130,7 @@ what the person names.
    ```sh
    node "$HOME/.boqo-channel/tools/channel.mjs" new "<channel>" --max <maxVideosPerRun> --first
    ```
-   gives `{"channel", "first", "videos": [{id, title, url, duration}]}`, newest first, long videos only.
+   gives `{"channel", "first", "newest", "videos": [{id, title, url, duration}]}`, newest first, long videos only.
    - **`"first": true`:** the channel's first run. `videos` holds only its newest long video, never the backlog, and
      the tool has marked every other video it listed as done (`marked`, for the report).
    - `"videos": []`: nothing new on this channel.
@@ -372,6 +372,7 @@ clip already posted stays posted as it was.
 | "The person said yes again, so I'll post the plan again" | `plan.mjs pending`: a stamped item is never posted twice |
 | "A yes in a new chat: I'll post what `pending` gives" | That yes answered another chat. Show its `lines` and ask again |
 | "`youtube.com/@x` and `@x` are the same: I'll tidy the config" | Pass the channel exactly as entered |
+| "`@x` and its `UC…` id: two channels to follow" | The same `newest` is one channel: "already followed as …" (setup.md) |
 | "The person said 'nice', so I'll post them" | Only the rule posts. With `ask`, the plan needs a yes |
 | "One message: post these, and the daily timer?" | One question at a time: the timer comes after the posting answer |
 | "Ten clips, three a day: I'll schedule the rest for later days" | At most `perDay.max` a run; the rest stay on disk |

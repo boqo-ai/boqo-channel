@@ -194,7 +194,7 @@ test("runCli new --first on a first run with no long video still marks the listi
   const home = tmp();
   const fetchFlat = async () => ({ entries: [entry("short000001", { duration: 30 }), entry("short000002", { duration: 50 })] });
   const out = await runCli(["new", "@x", "--first"], { home, fetchFlat });
-  assert.deepEqual(out, { channel: "https://www.youtube.com/@x/videos", first: true, videos: [], marked: 2 });
+  assert.deepEqual(out, { channel: "https://www.youtube.com/@x/videos", first: true, newest: null, videos: [], marked: 2 });
   assert.equal((await runCli(["new", "@x", "--first"], { home, fetchFlat })).first, false);
 });
 
@@ -216,7 +216,7 @@ test("runCli new --first: an empty listing saves no state, so the next run is st
   const home = tmp();
   const p = statePath("@x", home);
   const empty = await runCli(["new", "@x", "--first"], { home, fetchFlat: async () => ({ entries: [] }) });
-  assert.deepEqual(empty, { channel: "https://www.youtube.com/@x/videos", first: true, videos: [], marked: 0 });
+  assert.deepEqual(empty, { channel: "https://www.youtube.com/@x/videos", first: true, newest: null, videos: [], marked: 0 });
   assert.ok(!existsSync(p), "nothing listed: nothing saved");
   // a listing of only what is not out yet marks nothing either
   await runCli(["new", "@x", "--first"], { home, fetchFlat: async () => ({ entries: [entry("upcoming001", { live_status: "is_upcoming" })] }) });
@@ -245,6 +245,22 @@ test("runCli new without --first marks nothing on a first run", async () => {
   assert.equal(out.first, true);
   assert.equal(out.videos.length, 2);
   assert.ok(!existsSync(statePath("@x", home)));
+});
+
+test("runCli new gives the newest long video's id, seen or not, to tell one channel under two forms", async () => {
+  const home = tmp();
+  const entries = [entry("short000001", { duration: 30 }), entry("upcoming001", { live_status: "is_upcoming" }), entry("a".repeat(11)), entry("b".repeat(11))];
+  const fetchFlat = async () => ({ entries });
+  const out = await runCli(["new", "@x", "--max", "1"], { home, fetchFlat });
+  assert.equal(out.newest, "a".repeat(11));
+  await runCli(["mark", "@x", "a".repeat(11)], { home });
+  const again = await runCli(["new", "@x", "--max", "1"], { home, fetchFlat });
+  assert.equal(again.newest, "a".repeat(11), "seen or not");
+  assert.deepEqual(again.videos.map((v) => v.id), ["b".repeat(11)]);
+  // the same channel under another form: another state, the same newest
+  const other = await runCli(["new", "UCSHZKyawb77ixDdsGog4iWA", "--max", "1"], { home, fetchFlat });
+  assert.equal(other.newest, out.newest);
+  assert.equal((await runCli(["new", "@y"], { home, fetchFlat: async () => ({ entries: [entry("short000001", { duration: 30 })] }) })).newest, null);
 });
 
 test("runCli mark: writes state and reports the count", async () => {

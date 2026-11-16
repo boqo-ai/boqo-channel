@@ -23,6 +23,11 @@ node "$HOME/.boqo-channel/tools/channel.mjs" new "<channel>" --max 1
 
 Keep each channel exactly as the person typed it (SKILL.md → `<channel>`). This check marks nothing.
 
+**The same channel twice.** Its reply's `newest` is the id of the channel's newest long video, done or not. Run the
+same check on each channel already in `config.json`, one at a time, and compare: a new channel with the same
+`newest` as one already followed, or as one named earlier in this setup, is that channel in another form (`@x` and
+its `UC…` id). Refuse it: "already followed as <that channel>". A `newest` of `null` cannot be compared: keep it.
+
 ## 2. The accounts
 
 With boqo's tools (onboarding.md → 2), `list_accounts`, the ones with status `active`. For each channel, ask which
