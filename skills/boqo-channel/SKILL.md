@@ -128,14 +128,20 @@ what the person names.
    2. **No captions** (`"captions": "none"`): mark it (step 4.8), note it for the report, and go on with the next
       video. Its `info.json` stays, for A video with no captions.
    3. **Pick.** Read `select.md` (once a run), then `<video>/transcript.md` one part at a time (`grep -n '^## Part'
-      "<video>/transcript.md"` gives each part's first line), and write `<video>/picks.json`. For a pick's edges, the
-      words near a time:
+      "<video>/transcript.md"` gives each part's first line), and write `<video>/picks.json`. Every edge is set on a
+      quoted phrase (`select.md` → How to read):
+      ```sh
+      node "$HOME/.boqo-channel/tools/transcript.mjs" --words "<video>/words.json" --find "<3 to 6 words>" --near <seconds>
+      ```
+      gives `{"s", "e", "match", "score"}`: the seconds of the phrase's first word's start and last word's end on the
+      video's timeline, found within 60 s of `--near` (its line's stamp, `[12:34]` is 754), and the words it matched.
+      `{"error": "phrase not found near …"}`: read the words near that time,
       ```sh
       node "$HOME/.boqo-channel/tools/transcript.mjs" --words "<video>/words.json" --around <seconds>
       ```
-      gives `{"lines": ["[m:ss] text (s-e)", …]}` for 30 s either side; each line's `(s-e)` are the seconds of its
-      first word's start and its last word's end on the video's timeline, the numbers to set edges from
-      (`select.md` → How to read).
+      (`{"lines": ["[m:ss] text (s-e)", …]}` for 30 s either side), and quote again from them. Then check the returned
+      `s` or `e` lies within a few seconds of the line's `[m:ss]` stamp you meant: a far exact repeat of the phrase can
+      beat a near mis-captioned one, and then the edge is on the wrong line.
    4. **Check.**
       ```sh
       node "$HOME/.boqo-channel/tools/picks-check.mjs" "<video>/picks.json" --duration <duration> \
@@ -144,8 +150,9 @@ what the person names.
       `<duration>` is step 4.1's. Read `<video>/checked.json`.
       - `"ok": false`: fix each pick its `errors` name in `picks.json`, and check again.
       - `"ok": true`: every pick is snapped to whole words and carries `moved: {s, e}`, how far each edge moved. An
-        edge that moved 1 s or more landed somewhere you did not choose: read the words there (step 4.3's
-        `--around`), set that edge in `picks.json` yourself, and check again, once.
+        edge set from `--find` moves 0.05 s. One that moved more than 0.1 s either way (`|moved.s|` or `|moved.e|`)
+        landed somewhere you did not choose: find its phrase again (step 4.3), set that edge in `picks.json`, and check
+        again, once.
       - A video under 3 minutes: `--count-min 1` (`select.md` → How many).
    5. **Sections**, in the background (Rules):
       ```sh
@@ -291,8 +298,8 @@ it up again by itself.
 
 ## Redo one clip
 
-"Clip 2 should start earlier", "another title": change only that pick in `<video>/picks.json` and check the whole set
-again (step 4.4). Write that one checked pick, as a one-item array, to `<video>/redo-picks.json`. Run step 4.5 with
+"Clip 2 should start earlier", "another title": change only that pick in `<video>/picks.json` (a new edge by step
+4.3's `--find`) and check the whole set again (step 4.4). Write that one checked pick, as a one-item array, to `<video>/redo-picks.json`. Run step 4.5 with
 `--picks "<video>/redo-picks.json"` and its line going to `<video>/redo-sections.json`, then step 4.6 with
 `--sections "<video>/redo-sections.json" --picks "<video>/redo-picks.json" --out "<video>/redo"`. Move
 `<video>/redo/clip-01.mp4` over `<video>/out/clip-<k>.mp4` (`k` with two digits: `02`). Then delete
@@ -313,5 +320,7 @@ clip already posted stays posted as it was.
 | "Ten clips, three a day: I'll schedule the rest for later days" | At most `perDay.max` a run; the rest stay on disk |
 | "No captions: I'll download the audio and run whisper" | Not in a daily run. The report offers it |
 | "429 on one video, I'll try the next one at once" | YouTube is limiting: start nothing more this run |
+| "The opening is mid-line, I'll estimate where it falls" | Quote its first words and `--find` them |
+| "picks-check moved an edge 0.4 s, close enough" | More than 0.1 s either way (`\|moved.s\|` or `\|moved.e\|`): find its phrase again and set it |
 | "The tool failed, I'll write my own ffmpeg line" | Note the error, and go on with the next video |
 | "`RUN=…` once, then `$RUN` in every command" | The variable is gone in the next command. Write the path out |
