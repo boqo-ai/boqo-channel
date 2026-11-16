@@ -33,7 +33,8 @@ and Linux.
 ## Every day
 
 Run `/boqo-channel` once a day. In Claude Code it offers a daily timer at your run time. The timer lives in that
-Claude Code session: it fires only while the session stays open on a computer that is awake. In other agents, run
+Claude Code session: it fires only while the session stays open on a computer that is awake, and a run may stop to
+ask your permission for a step, so approve each one once or keep the session where you see it. In other agents, run
 `/boqo-channel` each day yourself.
 
 ## What runs where
@@ -47,6 +48,14 @@ Claude Code session: it fires only while the session stays open on a computer th
 ## The engine
 
 The engine (`engine/`, shared tools) is vendored from boqo-ai/boqo-clips — edit it there, then run its `scripts/sync-engine.mjs`.
+
+## Differences from the design
+
+- **Posts a day is a maximum only** (`perDay.max`), not a minimum and a maximum: a day with fewer good clips posts
+  fewer, and nothing is padded to reach a count.
+- **CI here tests this repo's own tools** (channel listing, the plan, the schedule), ffmpeg's filters and the engine
+  copy's hash. The engine's own checks (doctor, the sample render, the picks-check cases) run in boqo-clips' CI on
+  the same bytes, which the hash test (`tests/engine-copy.test.mjs`) pins.
 
 ## Licence
 
