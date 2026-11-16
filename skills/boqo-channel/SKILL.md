@@ -21,7 +21,7 @@ run once a day (Trigger).
 - **`<home>`:** `$BOQO_HOME`, or `~/.boqo` when it is unset; `echo "${BOQO_HOME:-$HOME/.boqo}"` prints it. Brand kits
   live in `<home>/brands/` and are shared by every boqo skill. This skill's own files, in `<home>/boqo-channel/`:
   `config.json` (below), `state/` (each channel's videos already done, written only by `channel.mjs`), `runs.md`
-  (one line per video) and `lock` (while a run or a posting is going).
+  (the log, below) and `lock` (while a run or a posting is going).
 - **`<run>`:** `<home>/boqo-channel/runs/<YYYYMMDD-HHMM>`, one folder per daily run, holding `plan.json` (the posts).
   **`<video>`:** `<run>/<video id>`, one folder per video; its clips land in `<video>/out/`.
 - **`<channel>`:** a channel exactly as the person first entered it and as `config.json` keeps it (`@lexfridman`, a
@@ -55,6 +55,19 @@ run once a day (Trigger).
 - `maxVideosPerRun`: new videos clipped per channel in one run.
 - `timer`: `"yes"` or `"no"`, the person's answer about the daily timer (Trigger); missing until then.
 
+## The log
+
+`<home>/boqo-channel/runs.md`, a line per event, appended as it happens and never edited:
+`<YYYY-MM-DD HH:MM> | <channel> | <video id> | <event>`. A video's events: `started` (step 4.0), `no captions` (step
+4.2), `failed: <the error's words>` (an error, step 4), `limited` (YouTube's limit, Rules), and `<n> clips |
+<video>/out` or `given up` (step 4.8). A posting adds `<YYYY-MM-DD HH:MM> | posting | <plan> | posted <m>, skipped
+<s>`. Append each line with a quoted heredoc, so the shell reads none of its words:
+```sh
+cat >> "<home>/boqo-channel/runs.md" <<'EOF'
+2026-11-15 21:14 | @lexfridman | y1-9yeYLJUo | started
+EOF
+```
+
 ## Rules
 
 - **Every tool prints one JSON line** on stdout and exits 0, or exits 1 with `{"error": "..."}`; hints go to stderr.
@@ -67,7 +80,8 @@ run once a day (Trigger).
   on every way out of either. A clip is posted once: `plan.json` stamps each post (Posting the plan).
 - **One yt-dlp call at a time,** listings included. YouTube rate-limits parallel requests. An error saying `HTTP Error
   429` or `Sign in to confirm you're not a bot` means YouTube is limiting this machine: start no further videos or
-  channels this run, and finish with what is done.
+  channels this run, and finish with what is done. It is no failure of the video: its line is `limited`, never
+  `failed` (step 4), and it is tried again tomorrow.
 - **No whisper in a daily run.** A video with no captions is noted for the report, which offers local transcription
   (A video with no captions).
 - **The person's language.** Answer in the language the person writes in. Titles and hooks are in the video's
@@ -122,11 +136,18 @@ what the person names.
    - `"videos": []`: nothing new on this channel.
    - An error: note it for the report, and go on with the next channel.
 4. **Each video,** channel by channel, newest first. `mkdir -p "<video>"`.
+   0. **Its earlier tries.** `grep -F "| <video id> |" "<home>/boqo-channel/runs.md"` prints its lines in the log
+      (none, or no file: its first try). Each `started` line begins a try, and the video's next line says how it
+      ended: `failed: …`, `no captions`, `limited` (does not count), or none at all (the run stopped there, which
+      counts as failed). Two failed tries already: mark it (step 4.8), note "failed twice" for the report, and go on
+      with the next video. Otherwise append its `started` line (The log).
    1. **Info.** `node "$HOME/.boqo-channel/tools/fetch.mjs" info "<url>" --dir "<video>"` gives `{id, title,
       duration, captions, chunks}`, with no video download. With captions it writes `<video>/words.json` and
       `<video>/transcript.md`. Tell the person, in one line, the title, the length and how many clips you will pick
       (`select.md` → How many).
-   2. **No captions** (`"captions": "none"`): mark it (step 4.8), note it for the report, and go on with the next
+   2. **No captions** (`"captions": "none"`): YouTube may not have made them yet. Append its `no captions` line. When
+      step 4.0 showed an earlier `no captions` line, it still has none a day later: mark it (step 4.8). Otherwise
+      leave it unmarked, and tomorrow's run looks again. Note it for the report either way, and go on with the next
       video. Its `info.json` stays, for A video with no captions.
    3. **Pick.** Read `select.md` (once a run), then `<video>/transcript.md` one part at a time (`grep -n '^## Part'
       "<video>/transcript.md"` gives each part's first line), and write `<video>/picks.json`. Every edge is set on a
@@ -179,16 +200,18 @@ what the person names.
         -o -name asr.json -o -name render.json \) -delete
       ```
       Keep `out/` and the small text files (`picks.json`, `checked.json`, `words.json`, `transcript.md`).
-   8. **Mark** it done, only now that its clips are rendered (or it has no captions):
+   8. **Mark** it done, only now that its clips are rendered (or step 4.0, step 4.2 or an error gives it up):
       ```sh
       node "$HOME/.boqo-channel/tools/channel.mjs" mark "<channel>" "<video id>"
       ```
-      A run that stops before this line leaves the video new, and the next run tries it again.
+      Then its line: `<n> clips | <video>/out` after a render, `given up` otherwise. A run that stops before the
+      mark leaves the video new, and the next run tries it again.
 
    **An error in steps 4.1, 4.5 or 4.6:** note it for the report, delete what the video made so far, with `<video>`
-   written out in full (`rm -rf "<video>/out"`, then step 4.7), and go on with the next video. Leave it unmarked, so
-   tomorrow tries it again; when `runs.md` already has a `failed` line for this video, mark it instead: it failed
-   twice and is not tried again.
+   written out in full (`rm -rf "<video>/out"`, then step 4.7), append its `failed: <the error's words>` line, and go
+   on with the next video. Leave it unmarked, so tomorrow tries it again; when step 4.0 showed one failed try
+   already, mark it instead: it failed twice and is not tried again. YouTube's limit is no error of the video
+   (Rules): the same clean-up, its `limited` line, unmarked, and no further video or channel this run (step 5).
 5. **Plan the posts.** A plan covers one day, the posting day, and only channels with `accounts`.
    - **An unanswered plan,** under `ask`: `node "$HOME/.boqo-channel/tools/plan.mjs" pending`. A `plan` it names is
      an earlier run's that nobody answered: `node "$HOME/.boqo-channel/tools/plan.mjs" skip "<that plan>" all`, and
@@ -225,16 +248,13 @@ what the person names.
    - `ask`: post nothing now. The report shows the plan and asks (step 7).
    - `{"auto": N}`: Posting the plan, now; this run already holds the lock.
 7. **Report,** at most 150 words, in the person's language:
-   - each channel in a line: the videos clipped (title, number of clips), any skipped with why (no captions, an
-     error in its words), and on its first run how many older videos were left alone (step 3's `marked`);
+   - each channel in a line: the videos clipped (title, number of clips), any skipped with why (no captions yet,
+     tried again tomorrow; no captions a day later; an error in its words; failed twice; YouTube's limit), and on its
+     first run how many older videos were left alone (step 3's `marked`);
    - an unanswered plan skipped in step 5: one line, its number of posts dropped, their clips still on disk;
    - the posts: one line each, `<date> <time> · <handles> · <title>`, then, under `auto`, posted or the refusal;
      under `ask`, the one question: "Post these?";
    - the clips' folder, `<run>`.
-
-   Then append one line per video to `<home>/boqo-channel/runs.md`:
-   `<YYYY-MM-DD HH:MM> | <channel> | <url> | <n> clips | <video>/out | posted <m>`, with `no captions` or
-   `failed: <error>` in place of `<n> clips` for a video that made none.
 8. **Unlock and the timer.** `rm -f "<home>/boqo-channel/lock"`, then Trigger (its question waits when the report asked
    "Post these?").
 
@@ -256,8 +276,9 @@ From step 6 under `auto`, or when the person answers the report's question, in t
    - **Not the plan this chat just reported** (a later chat, or another path than the `<run>/plan.json` you wrote):
      the yes was to another question. Show its `lines`, ask "Post these?" again, release the lock, and stop: the
      answer to that starts Posting the plan again.
-   - A no, or no answer: `node "$HOME/.boqo-channel/tools/plan.mjs" skip "<plan>" all`, release the lock, and stop:
-     the clips stay on disk. Then the timer question, when it is still to come (Trigger).
+   - A no, or no answer: `node "$HOME/.boqo-channel/tools/plan.mjs" skip "<plan>" all`, its `posting` line (The
+     log), release the lock, and stop: the clips stay on disk. Then the timer question, when it is still to come
+     (Trigger).
    - A yes to some ("not the second one"): `plan.mjs skip "<plan>" <n>` for each one left out.
 3. **The times.** When the first open item's time has already passed (the yes came late), plan the open items again
    (step 5, from now), write the new times into their `when`, keeping every other key, and say the new times.
@@ -279,8 +300,8 @@ From step 6 under `auto`, or when the person answers the report's question, in t
    - **The stamp fails** (`plan.mjs posted` gives an error): stop posting this plan, and tell the person which clips
      went and that the rest are not posted, with the error's words. Never go on posting with a plan that cannot
      record what went.
-5. The number posted goes into the run's lines in `runs.md` (`posted <m>`), one line tells the person what went where
-   and when, and the lock is released. Then the timer question, when it is still to come (Trigger).
+5. Its `posting` line goes into `runs.md` (The log), one line tells the person what went where and when, and the lock
+   is released. Then the timer question, when it is still to come (Trigger).
 
 ## Trigger
 
@@ -307,8 +328,8 @@ answers neither: ask "Which one: posting these, or the daily timer?"
 
 ## A video with no captions
 
-The report names it. When the person asks to clip it, transcribe it here; the video was marked done, so no run picks
-it up again by itself.
+The report names it. When the person asks to clip it, transcribe it here. It is marked done once its clips render
+(step 5 below), so no run clips it again.
 1. Run `node "$HOME/.boqo-channel/tools/doctor.mjs" --whisper optional`. When its `whisper` or `whisper-model` check
    fails, give that check's hint, and stop. Otherwise say how long it takes, about 13 s per minute of audio on an
    8-core CPU with the small model, more on fewer cores, and wait for a yes.
@@ -327,7 +348,7 @@ it up again by itself.
      --heat "<video>/info.json"
    ```
    `the words file has no words`: whisper heard no speech. Tell the person, and stop.
-5. Steps 4.3 to 4.7 of the daily run, then steps 5 to 7 for its clips alone, the plan going into a new `<run>` folder
+5. Steps 4.3 to 4.8 of the daily run, then steps 5 to 7 for its clips alone, the plan going into a new `<run>` folder
    named for now.
 
 ## Redo one clip
@@ -355,6 +376,8 @@ clip already posted stays posted as it was.
 | "One message: post these, and the daily timer?" | One question at a time: the timer comes after the posting answer |
 | "Ten clips, three a day: I'll schedule the rest for later days" | At most `perDay.max` a run; the rest stay on disk |
 | "No captions: I'll download the audio and run whisper" | Not in a daily run. The report offers it |
+| "No captions today, so it never will have" | YouTube can be late: unmarked the first time, marked when a day later has none |
+| "A 429 on this video: that's its failed try" | `limited`, not `failed`: YouTube's limit is not the video's fault |
 | "429 on one video, I'll try the next one at once" | YouTube is limiting: start nothing more this run |
 | "The opening is mid-line, I'll estimate where it falls" | Quote its first words and `--find` them |
 | "picks-check moved an edge 0.4 s, close enough" | More than 0.1 s either way (`\|moved.s\|` or `\|moved.e\|`): find its phrase again and set it |
