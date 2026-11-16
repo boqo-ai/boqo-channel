@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { countPosted, pending, runCli, stamp } from "../lib/plan.mjs";
+import { countPosted, localPath, pending, runCli, stamp, validatePlan } from "../lib/plan.mjs";
 
 const TOOL = fileURLToPath(new URL("../tools/plan.mjs", import.meta.url));
 const tmp = () => mkdtempSync(join(tmpdir(), "boqo channel plan-")); // a space, as in a real home folder
@@ -63,21 +63,97 @@ test("stamp refuses what is not an item of a plan", () => {
   assert.throws(() => stamp(p, "1", "posted", T1), /array/);
 });
 
-test("pending is the newest plan with an open item", () => {
+test("pending is the newest plan only: an older plan is never offered again", () => {
   const home = tmp();
-  assert.deepEqual(pending(home), { plan: null, items: [] });
+  assert.deepEqual(pending(home), { plan: null, items: [], lines: [] });
   const older = writeRun(home, "20261114-2113", [item(1), item(2)]);
+  assert.equal(pending(home).plan, older);
   const newer = writeRun(home, "20261115-2113", [item(1), item(2), item(3)]);
-  writeRun(home, "20261115-2200", []); // an empty plan: nothing to post
   mkdirSync(join(home, "boqo-channel", "runs", "20261116-0900")); // a run that stopped before its plan
-  assert.deepEqual(pending(home), { plan: newer, items: [1, 2, 3] });
+  assert.deepEqual(pending(home).plan, newer);
+  assert.deepEqual(pending(home).items, [1, 2, 3]);
   stamp(newer, "1", "posted", T1);
   stamp(newer, "3", "skipped", T1);
-  assert.deepEqual(pending(home), { plan: newer, items: [2] });
+  assert.deepEqual(pending(home).items, [2]);
   stamp(newer, "2", "posted", T1);
-  assert.deepEqual(pending(home), { plan: older, items: [1, 2] });
-  stamp(older, "all", "skipped", T1);
-  assert.deepEqual(pending(home), { plan: null, items: [] });
+  // the older plan still has open items, but a newer plan replaced it: nothing waits
+  assert.deepEqual(pending(home), { plan: null, items: [], lines: [] });
+  // an empty newest plan replaces an open one too
+  const home2 = tmp();
+  writeRun(home2, "20261114-2113", [item(1)]);
+  writeRun(home2, "20261115-2113", []);
+  assert.deepEqual(pending(home2), { plan: null, items: [], lines: [] });
+});
+
+test("pending lists its open items in the report's words, to ask about them again", () => {
+  const home = tmp();
+  const two = { ...item(2), accountIds: ["a", "b"], handles: ["@a", "@b"], when: { date: "2026-11-16", time: "15:00" } };
+  const p = writeRun(home, "20261115-2113", [item(1), two, item(3)]);
+  stamp(p, "1", "posted", T1);
+  assert.deepEqual(pending(home), {
+    plan: p,
+    items: [2, 3],
+    lines: ["2026-11-16 15:00 · @a, @b · Clip 2", "2026-11-16 09:00 · @a · Clip 3"],
+  });
+});
+
+test("a damaged plan's error says to move it aside, never to delete it", () => {
+  const home = tmp();
+  const p = writeRun(home, "20261115-2113", [item(1)]);
+  for (const text of ["{not json", '{"a": 1}', "[1]"]) {
+    writeFileSync(p, text);
+    for (const fn of [() => pending(home), () => countPosted("2026-11-16", home), () => stamp(p, "1", "posted", T1)]) {
+      assert.throws(fn, (e) => e.message.includes(p) && e.message.includes("move it aside to plan.json.bad") && !/delete it/.test(e.message), text);
+    }
+  }
+});
+
+test("validate passes a well-formed plan, and an empty one", () => {
+  const home = tmp();
+  const dir = join(home, "boqo-channel", "runs", "20261115-2113", "vid00000001", "out");
+  mkdirSync(dir, { recursive: true });
+  const clip = (k) => { const f = join(dir, `clip-0${k}.mp4`); writeFileSync(f, "x"); return f; };
+  const p = writeRun(home, "20261115-2113", [{ ...item(1), clip: clip(1) }, { ...item(2), clip: clip(2) }]);
+  assert.deepEqual(validatePlan(p), { ok: true, items: 2 });
+  const empty = writeRun(home, "20261115-2200", []);
+  assert.deepEqual(validatePlan(empty), { ok: true, items: 0 });
+});
+
+test("validate names every item that would not post as planned", () => {
+  const home = tmp();
+  const dir = join(home, "boqo-channel", "runs", "20261115-2113", "vid00000001", "out");
+  mkdirSync(dir, { recursive: true });
+  const c1 = join(dir, "clip-01.mp4");
+  writeFileSync(c1, "x");
+  const good = { ...item(1), clip: c1 };
+  const cases = [
+    [{ ...good, clip: join(dir, "clip-09.mp4") }, /item 1: no clip file at/],
+    [{ ...good, clip: "out/clip-01.mp4" }, /item 1: clip is not a full path/],
+    [{ ...good, title: " " }, /item 1: no title/],
+    [{ ...good, channel: "" }, /item 1: no channel/],
+    [{ ...good, accountIds: [] }, /item 1: no accountIds/],
+    [{ ...good, accountIds: ["a", 3] }, /item 1: no accountIds/],
+    [{ ...good, handles: ["@a", "@b"] }, /item 1: handles do not match accountIds/],
+    [{ ...good, when: { date: "2026-02-30", time: "09:00" } }, /item 1: when\.date/],
+    [{ ...good, when: { date: "2026-11-16", time: "9:00" } }, /item 1: when\.time/],
+    [{ ...good, when: { date: "2026-11-16", time: "24:00" } }, /item 1: when\.time/],
+    [{ ...good, when: undefined }, /item 1: when\.date/],
+  ];
+  for (const [bad, want] of cases) {
+    const p = writeRun(home, "20261115-2113", [bad]);
+    assert.throws(() => validatePlan(p), want, JSON.stringify(bad));
+  }
+  const p = writeRun(home, "20261115-2113", [good, { ...good, title: "Again" }]);
+  assert.throws(() => validatePlan(p), /item 2: clip-01\.mp4 is item 1's clip too/);
+  const p2 = writeRun(home, "20261115-2113", [{ ...good, title: "" }, { ...good, clip: "x.mp4" }]);
+  assert.throws(() => validatePlan(p2), (e) => /item 1: no title/.test(e.message) && /item 2: clip is not a full path/.test(e.message));
+});
+
+test("a Git Bash path in a plan is found on Windows", () => {
+  assert.equal(localPath("/c/Users/A B/.boqo/x.mp4", "win32"), "c:/Users/A B/.boqo/x.mp4");
+  assert.equal(localPath("C:\\Users\\x.mp4", "win32"), "C:\\Users\\x.mp4");
+  assert.equal(localPath("/c/Users/x.mp4", "linux"), "/c/Users/x.mp4");
+  assert.equal(localPath("/home/a/x.mp4", "darwin"), "/home/a/x.mp4");
 });
 
 test("count is the items posted for one posting day, across runs", () => {
@@ -94,13 +170,14 @@ test("count is the items posted for one posting day, across runs", () => {
   assert.throws(() => countPosted("tomorrow", home), /YYYY-MM-DD/);
 });
 
-test("runCli takes the four commands and nothing else", () => {
+test("runCli takes the five commands and nothing else", () => {
   const home = tmp();
   const p = writeRun(home, "20261115-2113", [item(1)]);
-  assert.deepEqual(runCli(["pending"], { home }), { plan: p, items: [1] });
+  assert.deepEqual(runCli(["pending"], { home }), { plan: p, items: [1], lines: ["2026-11-16 09:00 · @a · Clip 1"] });
   assert.equal(runCli(["posted", p, "1"], { home, now: T1 }).posted, T1.toISOString());
   assert.deepEqual(runCli(["count", "--date", "2026-11-16"], { home }), { date: "2026-11-16", posted: 1 });
-  for (const bad of [[], ["posted", p], ["skip"], ["pending", "x"], ["count", "2026-11-16"], ["frob"]]) {
+  assert.throws(() => runCli(["validate", p], { home }), /no clip file/);
+  for (const bad of [[], ["posted", p], ["skip"], ["pending", "x"], ["count", "2026-11-16"], ["validate"], ["frob"]]) {
     assert.throws(() => runCli(bad, { home }), /usage/, JSON.stringify(bad));
   }
 });
@@ -114,7 +191,11 @@ test("CLI prints one JSON line, and one error line with exit 1", () => {
   assert.equal(ok.stdout.trim().split("\n").length, 1);
   assert.equal(typeof JSON.parse(ok.stdout).posted, "string");
   const pend = spawnSync(process.execPath, [TOOL, "pending"], { env, encoding: "utf8" });
-  assert.deepEqual(JSON.parse(pend.stdout), { plan: null, items: [] });
+  assert.deepEqual(JSON.parse(pend.stdout), { plan: null, items: [], lines: [] });
+  const val = spawnSync(process.execPath, [TOOL, "validate", p], { env, encoding: "utf8" });
+  assert.equal(val.status, 1);
+  assert.equal(val.stdout.trim().split("\n").length, 1);
+  assert.match(JSON.parse(val.stdout).error, /no clip file/);
   const bad = spawnSync(process.execPath, [TOOL, "posted", p, "9"], { env, encoding: "utf8" });
   assert.equal(bad.status, 1);
   assert.equal(bad.stdout.trim().split("\n").length, 1);

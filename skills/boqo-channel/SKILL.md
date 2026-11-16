@@ -60,7 +60,8 @@ run once a day (Trigger).
 - **Every tool prints one JSON line** on stdout and exits 0, or exits 1 with `{"error": "..."}`; hints go to stderr.
   A tool's error stops that video or that channel, never the whole run: note it in the error's words for the report
   and go on with the next. Do not work around a tool with your own ffmpeg or yt-dlp commands, except the ones these
-  files give.
+  files give. A `plan.mjs` error that calls a plan damaged (`move it aside`): `mv "<plan>" "<plan>.bad"`, never
+  delete it; say its posts are not made, and go on.
 - **Never post without the rule** in `config.json`. With `ask` (the default), the posts wait for the person's yes.
 - **One at a time:** the lock (The daily run, step 1) is taken before a run and before posting a plan, and released
   on every way out of either. A clip is posted once: `plan.json` stamps each post (Posting the plan).
@@ -189,11 +190,15 @@ what the person names.
    tomorrow tries it again; when `runs.md` already has a `failed` line for this video, mark it instead: it failed
    twice and is not tried again.
 5. **Plan the posts.** A plan covers one day, the posting day, and only channels with `accounts`.
-   - **The day:** today, from the next full hour (09:00 at the earliest) to 21:00, when the run starts before 15:00;
-     otherwise tomorrow, 09:00 to 21:00.
+   - **An unanswered plan,** under `ask`: `node "$HOME/.boqo-channel/tools/plan.mjs" pending`. A `plan` it names is
+     an earlier run's that nobody answered: `node "$HOME/.boqo-channel/tools/plan.mjs" skip "<that plan>" all`, and
+     the report says so (step 7). Only the newest plan is ever posted, so an old one never goes out days late.
+   - **The day:** when it is before 15:00 now, today, from the next full hour from now (09:00 at the earliest) to
+     21:00; otherwise tomorrow, 09:00 to 21:00.
    - **A channel's posts:** the clips of its videos marked done in this run after a render (step 4.8), never a clip
      from an earlier run or from a video left unmarked. Best first (each video's `clip-01`, newest video first, then
-     each video's `clip-02`, and so on), at most `perDay.max`. The clips not planned stay on disk.
+     each video's `clip-02`, and so on), at most `perDay.max`. The clips not planned stay on disk. A clip's title is
+     its pick's `title` in `<video>/checked.json`: pick 1 is `clip-01.mp4`, pick 2 `clip-02.mp4`, and so on.
    - **`{"auto": N}`:** first the posts already made for that day,
      `node "$HOME/.boqo-channel/tools/plan.mjs" count --date <YYYY-MM-DD>` (`{"posted": P}`); then at most N − P
      clips in all: every channel's first, then every channel's second, until N − P.
@@ -206,7 +211,12 @@ what the person names.
 
    Write `<run>/plan.json`, one item per post:
    `{"clip": "<video>/out/clip-01.mp4", "title": "<its title>", "channel": "<channel>", "accountIds": ["<id>"],
-   "handles": ["@name"], "when": {"date": "YYYY-MM-DD", "time": "HH:MM"}}`. Nothing to post: `[]`.
+   "handles": ["@name"], "when": {"date": "YYYY-MM-DD", "time": "HH:MM"}}`. Nothing to post: `[]`. Then check it:
+   ```sh
+   node "$HOME/.boqo-channel/tools/plan.mjs" validate "<run>/plan.json"
+   ```
+   `{"ok": true}`, or an error naming each item that would not post as planned: fix those in the file, and validate
+   again.
 
    A run that stops after marking a video and before writing `plan.json` leaves that video's clips on disk, never
    posted: a lost post, never a double one.
@@ -217,6 +227,7 @@ what the person names.
 7. **Report,** at most 150 words, in the person's language:
    - each channel in a line: the videos clipped (title, number of clips), any skipped with why (no captions, an
      error in its words), and on its first run how many older videos were left alone (step 3's `marked`);
+   - an unanswered plan skipped in step 5: one line, its number of posts dropped, their clips still on disk;
    - the posts: one line each, `<date> <time> · <handles> · <title>`, then, under `auto`, posted or the refusal;
      under `ask`, the one question: "Post these?";
    - the clips' folder, `<run>`.
@@ -238,8 +249,12 @@ From step 6 under `auto`, or when the person answers the report's question, in t
    ```sh
    node "$HOME/.boqo-channel/tools/plan.mjs" pending
    ```
-   gives `{"plan": "<path>", "items": [n, …]}`: the newest plan, and its items (numbered from 1) neither posted nor
-   skipped. `"plan": null`: nothing waits; say so, and stop. Every command below writes `<plan>` out in full.
+   gives `{"plan": "<path>", "items": [n, …], "lines": […]}`: the newest plan, its items (numbered from 1) neither
+   posted nor skipped, and a report line for each. `"plan": null`: nothing waits; say so, and stop. Every command
+   below writes `<plan>` out in full.
+   - **Not the plan this chat just reported** (a later chat, or another path than the `<run>/plan.json` you wrote):
+     the yes was to another question. Show its `lines`, ask "Post these?" again, release the lock, and stop: the
+     answer to that starts Posting the plan again.
    - A no, or no answer: `node "$HOME/.boqo-channel/tools/plan.mjs" skip "<plan>" all`, and stop: the clips stay on
      disk.
    - A yes to some ("not the second one"): `plan.mjs skip "<plan>" <n>` for each one left out.
@@ -315,6 +330,7 @@ clip already posted stays posted as it was.
 | "I'll mark the video now, before the render" | Mark only after its clips render: a crash then retries it tomorrow |
 | "Yesterday's clips are on disk, I'll add them to the plan" | Only clips of videos marked in this run |
 | "The person said yes again, so I'll post the plan again" | `plan.mjs pending`: a stamped item is never posted twice |
+| "A yes in a new chat: I'll post what `pending` gives" | That yes answered another chat. Show its `lines` and ask again |
 | "`youtube.com/@x` and `@x` are the same: I'll tidy the config" | Pass the channel exactly as entered |
 | "The person said 'nice', so I'll post them" | Only the rule posts. With `ask`, the plan needs a yes |
 | "Ten clips, three a day: I'll schedule the rest for later days" | At most `perDay.max` a run; the rest stay on disk |
