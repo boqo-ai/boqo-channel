@@ -58,11 +58,11 @@ hold a space); `~` does not expand inside quotes, so the commands use `"$HOME/..
       A copy works the same: the skill calls its tools in `~/.boqo-channel/tools/`.
 
 4. **Check the tools the skill uses.** Run `node "$HOME/.boqo-channel/tools/doctor.mjs" --whisper optional`. It only
-   looks, and prints one JSON line: `ok` is true when every required tool works (Node 20+, ffmpeg with libass,
-   yt-dlp), and `hints` says how to install each one that is missing or too old, the optional whisper.cpp included (it
-   transcribes, on the person's ask, a video that has no captions). When it cannot run, `node --version` (it must be
-   20 or newer). Name what is missing and how the person installs it, in the words of `hints`. Install nothing
-   yourself. A missing tool does not stop the install: say what it is needed for and go on.
+   looks, and prints one JSON line: `ok` is true when every required tool works (Node 20+, ffmpeg with libass and
+   its ffprobe, yt-dlp), and `hints` says how to install each one that is missing or too old, the optional
+   whisper.cpp included (it transcribes, on the person's ask, a video that has no captions). When it cannot run,
+   `node --version` (it must be 20 or newer). Name what is missing and how the person installs it, in the words of
+   `hints`. Install nothing yourself. A missing tool does not stop the install: say what it is needed for and go on.
 
 5. **Connect no service, set no timer and run no `npm install`.** Onboarding and setup ask for each of those when
    it is needed.

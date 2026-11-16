@@ -78,7 +78,8 @@ EOF
   delete it; say its posts are not made, and go on.
 - **Never post without the rule** in `config.json`. With `ask` (the default), the posts wait for the person's yes.
 - **One at a time:** the lock (The daily run, step 1) is taken before a run and before posting a plan, and released
-  on every way out of either. A clip is posted once: `plan.json` stamps each post (Posting the plan).
+  on every way out of either. A clip is posted once: `plan.json` stamps each post, and `post_video` goes once per item,
+  never again after an unclear reply (Posting the plan, step 4).
 - **One yt-dlp call at a time,** listings included. YouTube rate-limits parallel requests. An error saying `HTTP Error
   429` or `Sign in to confirm you're not a bot` means YouTube is limiting this machine: start no further videos or
   channels this run, and finish with what is done. It is no failure of the video: its line is `limited`, never
@@ -126,7 +127,12 @@ what the person names.
    From here on, every way out of the run (the end, an error that stops it, the person's stop) releases the lock:
    `rm -f "<home>/boqo-channel/lock"`.
 2. **Brand and config.** `node "$HOME/.boqo-channel/tools/brand.mjs" show` (the default kit) and `config.json`. No kit
-   or no config: release the lock and go to Setup. Keep the kit's `name` for `--brand`, then `mkdir -p "<run>"`.
+   or no config: release the lock and go to Setup. Keep the kit's `name` for `--brand`, then `mkdir -p "<run>"`, and
+   delete the upload replies a posting that died left (they hold live signed URLs; no posting runs while this run
+   holds the lock):
+   ```sh
+   find "<home>/boqo-channel/runs" -mindepth 2 -maxdepth 2 -type f -name 'upload-*.json' -delete
+   ```
 3. **New videos.** For each channel in `config.json`, in order:
    ```sh
    node "$HOME/.boqo-channel/tools/channel.mjs" new "<channel>" --max <maxVideosPerRun> --first
@@ -144,8 +150,8 @@ what the person names.
       with the next video. Otherwise append its `started` line (The log).
    1. **Info.** `node "$HOME/.boqo-channel/tools/fetch.mjs" info "<url>" --dir "<video>"` gives `{id, title,
       duration, captions, chunks}`, with no video download. With captions it writes `<video>/words.json` and
-      `<video>/transcript.md`. Tell the person, in one line, the title, the length and how many clips you will pick
-      (`select.md` → How many).
+      `<video>/transcript.md`; `chunks` is how many parts the transcript has, read in order (step 4.3). Tell the
+      person, in one line, the title, the length and how many clips you will pick (`select.md` → How many).
    2. **No captions** (`"captions": "none"`): YouTube may not have made them yet. Append its `no captions` line. When
       step 4.0 showed an earlier `no captions` line, it still has none a day later: mark it (step 4.8). Otherwise
       leave it unmarked, and tomorrow's run looks again. Note it for the report either way, and go on with the next
@@ -350,13 +356,20 @@ The report names it. When the person asks to clip it, transcribe it here. It is 
    ```sh
    node "$HOME/.boqo-channel/tools/asr.mjs" "<video>/audio.<ext>" --out "<video>/words.json" > "<video>/asr.json"
    ```
-   `{"words": N, …}` in `<video>/asr.json` is done; `{"error": …}` stops it.
+   `{"words": N, …}` in `<video>/asr.json` is done; `{"error": …}` stops it. `"englishOnly": true` is a model that
+   hears every video as English: when this one is not in English (`<video>/info.json`'s `language`, the title, the
+   person), say so, and offer the multilingual model (about 150 MB). On a yes, then run whisper again:
+   ```sh
+   mkdir -p "<home>/models" && curl -L -o "<home>/models/ggml-base.bin" \
+     "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin"
+   ```
 4. The transcript, with the most-replayed marks (`--heat`) when `<video>/info.json` is there:
    ```sh
    node "$HOME/.boqo-channel/tools/transcript.mjs" --words "<video>/words.json" --out "<video>/transcript.md" \
      --heat "<video>/info.json"
    ```
-   `the words file has no words`: whisper heard no speech. Tell the person, and stop.
+   `the words file has no words`: whisper heard no speech. Tell the person, and stop. Known limit: whisper can hear a
+   word that is not there ("Oh") in silence at a multiple of 30 s, its window edge; never set an edge on one.
 5. Steps 4.3 to 4.8 of the daily run, then steps 5 to 7 for its clips alone, the plan going into a new `<run>` folder
    named for now.
 
