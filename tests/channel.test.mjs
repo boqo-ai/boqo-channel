@@ -198,6 +198,46 @@ test("runCli new --first on a first run with no long video still marks the listi
   assert.equal((await runCli(["new", "@x", "--first"], { home, fetchFlat })).first, false);
 });
 
+test("runCli new --first: a state file with an empty seen list is still a first run", async () => {
+  const home = tmp();
+  const p = statePath("@x", home);
+  mkdirSync(join(home, "boqo-channel", "state"), { recursive: true });
+  writeFileSync(p, JSON.stringify({ seen: [] }));
+  const ids = ["a", "b", "c", "d"].map((c) => c.repeat(11));
+  const fetchFlat = async () => ({ entries: ids.map((id) => entry(id)) });
+  const out = await runCli(["new", "@x", "--max", "3", "--first"], { home, fetchFlat });
+  assert.equal(out.first, true);
+  assert.deepEqual(out.videos.map((v) => v.id), [ids[0]], "only the newest, never the backlog");
+  assert.equal(out.marked, 3);
+  assert.deepEqual(loadState(p).seen, ids.slice(1));
+});
+
+test("runCli new --first: an empty listing saves no state, so the next run is still first", async () => {
+  const home = tmp();
+  const p = statePath("@x", home);
+  const empty = await runCli(["new", "@x", "--first"], { home, fetchFlat: async () => ({ entries: [] }) });
+  assert.deepEqual(empty, { channel: "https://www.youtube.com/@x/videos", first: true, videos: [], marked: 0 });
+  assert.ok(!existsSync(p), "nothing listed: nothing saved");
+  // a listing of only what is not out yet marks nothing either
+  await runCli(["new", "@x", "--first"], { home, fetchFlat: async () => ({ entries: [entry("upcoming001", { live_status: "is_upcoming" })] }) });
+  assert.ok(!existsSync(p));
+  const ids = ["a", "b", "c"].map((c) => c.repeat(11));
+  const out = await runCli(["new", "@x", "--first"], { home, fetchFlat: async () => ({ entries: ids.map((id) => entry(id)) }) });
+  assert.equal(out.first, true);
+  assert.deepEqual(out.videos.map((v) => v.id), [ids[0]]);
+  assert.equal(out.marked, 2);
+});
+
+test("a broken state file names its way out: delete it and the next run clips only the newest", () => {
+  const home = tmp();
+  const p = statePath("@x", home);
+  mkdirSync(join(home, "boqo-channel", "state"), { recursive: true });
+  for (const text of ["{not json", '{"seen": "x"}', "null"]) {
+    writeFileSync(p, text);
+    assert.throws(() => loadState(p), (e) => e.message.includes(p) && /delete it: the next run then clips only the newest video/.test(e.message), text);
+  }
+});
+
 test("runCli new without --first marks nothing on a first run", async () => {
   const home = tmp();
   const fetchFlat = async () => ({ entries: ["a", "b"].map((c) => entry(c.repeat(11))) });
