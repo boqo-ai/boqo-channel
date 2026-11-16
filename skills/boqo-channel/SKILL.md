@@ -61,7 +61,8 @@ run once a day (Trigger).
 `<YYYY-MM-DD HH:MM> | <channel> | <video id> | <event>`. A video's events: `started` (step 4.0), `no captions` (step
 4.2), `failed: <the error's words>` (an error, step 4), `limited` (YouTube's limit, Rules), and `<n> clips |
 <video>/out` or `given up` (step 4.8). A posting adds `<YYYY-MM-DD HH:MM> | posting | <plan> | posted <m>, skipped
-<s>`. Append each line with a quoted heredoc, so the shell reads none of its words:
+<s>`. The time is what `date '+%Y-%m-%d %H:%M'` prints at that moment, never written from memory. Append each line
+with a quoted heredoc, so the shell reads none of its words:
 ```sh
 cat >> "<home>/boqo-channel/runs.md" <<'EOF'
 2026-11-15 21:14 | @lexfridman | y1-9yeYLJUo | started
@@ -216,8 +217,8 @@ what the person names.
    - **An unanswered plan,** under `ask`: `node "$HOME/.boqo-channel/tools/plan.mjs" pending`. A `plan` it names is
      an earlier run's that nobody answered: `node "$HOME/.boqo-channel/tools/plan.mjs" skip "<that plan>" all`, and
      the report says so (step 7). Only the newest plan is ever posted, so an old one never goes out days late.
-   - **The day:** when it is before 15:00 now, today, from the next full hour from now (09:00 at the earliest) to
-     21:00; otherwise tomorrow, 09:00 to 21:00.
+   - **The day:** when it is before 15:00 now (`date '+%H:%M'`), today, from the next full hour from now (09:00 at the
+     earliest) to 21:00; otherwise tomorrow, 09:00 to 21:00.
    - **A channel's posts:** the clips of its videos marked done in this run after a render (step 4.8), never a clip
      from an earlier run or from a video left unmarked. Best first (each video's `clip-01`, newest video first, then
      each video's `clip-02`, and so on), at most `perDay.max`. The clips not planned stay on disk. A clip's title is
