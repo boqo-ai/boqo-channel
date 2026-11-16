@@ -1,9 +1,9 @@
-<!-- copied from boqo-ai/boqo-clips skills/boqo-clips/post.md @ bf31f0c; keep in step -->
+<!-- copied from boqo-ai/boqo-clips skills/boqo-clips/post.md @ 5558df4; keep in step -->
 # Posting through boqo
 
 Runs from SKILL.md → Posting the plan, for the items of `<plan>` still open. It posts only through boqo's tools, and
-only by the rule in `<home>/boqo-channel/config.json`. Posting the clip as it is costs no credits. Paths go into commands written out in
-full, in double quotes (SKILL.md → Overview).
+only by the rule in `<home>/boqo-channel/config.json`. Posting the clip as it is costs no credits. Paths go into
+commands written out in full, in double quotes (SKILL.md → Overview).
 
 ## Before the first clip
 
@@ -38,13 +38,21 @@ One clip at a time: each open item of the plan, in order. `<file>` is its `clip`
 5. `complete_upload {projectId}`. A link in its reply (a daily credit cap on this connection): give it to the person,
    and stop this clip.
 6. `post_video {items: [{source: "<projectId>", accountIds: ["<id>", …], when: {date: "YYYY-MM-DD", time: "HH:MM"}}]}`,
-   with the item's active `accountIds` and its `when`. It takes a Post project that is not ready yet, and boqo makes the post
-   once the file is ready, so there is no need to wait first. The time is on the account's own clock. No `caption`
-   (The caption) and no `uniqueize`. Right after it answers with no refusal, stamp the item before anything else:
-   `node "$HOME/.boqo-channel/tools/plan.mjs" posted "<plan>" <k>`.
+   once for this item, with its active `accountIds` and its `when`. It takes a Post project that is not ready yet, and
+   boqo makes the post once the file is ready, so there is no need to wait first. The time is on the account's own
+   clock. No `caption` (The caption) and no `uniqueize`. A clear answer, the post made and its time: stamp the item
+   before anything else, `node "$HOME/.boqo-channel/tools/plan.mjs" posted "<plan>" <k>`. A refusal: no stamp
+   (Refusals).
+   An unclear reply (a timeout, a dropped connection, an empty or cut-off reply, an error that is not boqo's own
+   sentence): never call `post_video` again for this item; it may have gone through. `list_schedule {accountId}` for
+   each of its accounts: a post whose `clipTitle` is this item's title (or step 2's reworded one), within a day of its
+   `when` (`scheduledAt` is UTC), counts as posted: stamp it as above. None:
+   `node "$HOME/.boqo-channel/tools/plan.mjs" skip "<plan>" <k>`, so no later yes posts it, and tell the person it may
+   not have gone out (SKILL.md → Posting the plan, step 4).
 7. One line: the clip, the accounts, and when it goes out.
 
-**After the last clip,** `get_project {projectId}` for each one posted. `queued`, `processing` or `ready` is fine.
+**After the last clip,** delete any reply file left, `find "<run>" -maxdepth 1 -type f -name 'upload-*.json' -delete`,
+then `get_project {projectId}` for each one posted. `queued`, `processing` or `ready` is fine.
 `failed`: tell the person which clip, with its `error` (the text inside its `<data kind="project_error">` tag); that
 clip will not be posted. To look again later without a foreground `sleep` (Claude Code refuses one), run
 `sleep 20` in the background and check when it ends.
@@ -62,4 +70,4 @@ A refusal from boqo is its own sentence: say it as it came, keep the files, stop
 all, with the plan line, "Autoposting comes with the 7-day trial or Starter from $12": "Accounts and scheduling are
 on paid plans." from `create_upload`, or "Publishing needs a paid plan." from `post_video`.
 
-The number of clips posted goes into the run's lines in `runs.md` (SKILL.md → Posting the plan, step 5).
+What was posted and skipped goes into the plan's `posting` line in `runs.md` (SKILL.md → Posting the plan, step 5).
