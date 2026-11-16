@@ -112,7 +112,7 @@ cp -R "$HOME/.boqo-channel/skills/boqo-channel/." "<skills>/boqo-channel/"
 
 ## Removing
 
-In Claude Code, delete the daily timer first: `CronList`, then `CronDelete` the job whose prompt is `/boqo-channel`.
+In Claude Code, delete the daily timer first: `CronList`, then `CronDelete` the job whose prompt is `/boqo-channel` or `/boqo-channel timer`.
 Then:
 
 ```sh

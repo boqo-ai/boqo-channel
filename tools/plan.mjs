@@ -8,8 +8,10 @@
 // plan.mjs clips <video>... [--max N]  the clips a day's plan posts, from each <video>/clips.json (boqo-clips' record):
 //                                      its rendered clips in the FINAL order (Ranked, with the stranger judgments), the
 //                                      videos taking turns (each one's best first), the first N of them:
-//                                      {"clips":[{"video","file","title","hook"}],"kept","rendered"}; never an unrendered
-//                                      clip. Give the videos newest first.
+//                                      {"clips":[{"video","id","file","title","hook","start","end"}],"kept","rendered",
+//                                      "excluded"}; never an unrendered clip, and never a clip whose moment (the video's
+//                                      id and edges, overlapping by more than 25%) a posted plan item already carries.
+//                                      Give the videos newest first.
 // plan.mjs validate <plan.json>        right after writing a plan: {"ok":true,"items":N}, or an error naming each item
 //                                      that would not post as planned
 import { runCli } from "../lib/plan.mjs";

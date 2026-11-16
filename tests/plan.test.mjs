@@ -304,7 +304,7 @@ test("several videos take turns, each in its own final order, the first video fi
 test("a video with nothing rendered gives no clips, and a clips.json that cannot be read is an error naming it", () => {
   const home = tmp();
   const none = writeVideo(home, "none", [row(1, 80)]);
-  assert.deepEqual(runCli(["clips", none], { home }), { clips: [], kept: 1, rendered: 0 });
+  assert.deepEqual(runCli(["clips", none], { home }), { clips: [], kept: 1, rendered: 0, excluded: 0 });
   const missing = join(home, "boqo-channel", "runs", "x", "gone");
   assert.throws(() => runCli(["clips", missing], { home }), /no clips\.json at .*gone/);
   const bad = writeVideo(home, "bad", []);
@@ -331,4 +331,63 @@ test("the clips command prints one JSON line from the CLI, and its error ends wi
   const bad = spawnSync(process.execPath, [TOOL, "clips", join(home, "nope")], { env, encoding: "utf8" });
   assert.equal(bad.status, 1);
   assert.match(JSON.parse(bad.stdout).error, /no clips\.json/);
+});
+
+// --- a clip already posted is never offered again (a redo of a video's edges re-renders every clip) ------------------
+
+const postedItem = (video, start, end, extra = {}) => ({ ...item(1), video, start, end, posted: T1.toISOString(), ...extra });
+
+test("clips leaves out a moment already posted, even when a redo renamed its file and gave it new edges", () => {
+  const home = tmp();
+  // Clip 1 starts at 100, clip 2 at 200, clip 3 at 300 (each 40 s). Clip 2's moment was posted before the redo, when its
+  // edges were 195-238 (a different file, a different title): 38 of the new clip's 40 s lie inside it, over 25% of the shorter.
+  writeRun(home, "20261115-2113", [postedItem("vid1", 195, 238, { title: "Old title", clip: "/x/old.mp4" })]);
+  const video = writeVideo(home, "vid1", [renderedRow(1, 90), renderedRow(2, 80), renderedRow(3, 70)]);
+  const r = runCli(["clips", video], { home });
+  assert.deepEqual(r.clips.map((c) => c.title), ["Clip 1", "Clip 3"]);
+  assert.equal(r.excluded, 1);
+  // --max counts only what is left: the best two unposted
+  assert.deepEqual(runCli(["clips", video, "--max", "2"], { home }).clips.map((c) => c.title), ["Clip 1", "Clip 3"]);
+});
+
+test("a skipped item, a small overlap, another video and an old plan with no moment do not hide a clip", () => {
+  const home = tmp();
+  writeRun(home, "20261115-2113", [
+    postedItem("vid1", 100, 140, { posted: undefined, skipped: T1.toISOString() }),   // skipped, not posted
+    postedItem("vid1", 330, 370),                                                      // 10 of 40 s: 25% is not more than 25%
+    postedItem("other", 200, 240),                                                     // another video
+    { ...item(2), posted: T1.toISOString() },                                          // a plan from before this field
+  ]);
+  const video = writeVideo(home, "vid1", [renderedRow(1, 90), renderedRow(2, 80), renderedRow(3, 70)]);
+  const r = runCli(["clips", video], { home });
+  assert.deepEqual(r.clips.map((c) => c.title), ["Clip 1", "Clip 2", "Clip 3"]);
+  assert.equal(r.excluded, 0);
+});
+
+test("a posted item in a plan moved aside to plan.json.bad still hides its clip", () => {
+  const home = tmp();
+  const p = writeRun(home, "20261115-2113", [postedItem("vid1", 100, 140)]);
+  renameSync(p, `${p}.bad`);
+  const video = writeVideo(home, "vid1", [renderedRow(1, 90), renderedRow(2, 80)]);
+  assert.deepEqual(runCli(["clips", video], { home }).clips.map((c) => c.title), ["Clip 2"]);
+});
+
+test("each clip carries its video id and edges, for the plan item that will record them", () => {
+  const home = tmp();
+  const video = writeVideo(home, "vid9", [renderedRow(1, 90)]);
+  assert.deepEqual(runCli(["clips", video], { home }).clips.map((c) => [c.id, c.start, c.end]), [["vid9", 100, 140]]);
+});
+
+test("validate accepts a hook that is a string or null, and the clip's moment; it refuses the rest", () => {
+  const home = tmp();
+  const file = join(home, "clip-01.mp4");
+  writeFileSync(file, "x");
+  const ok = { ...item(1), clip: file, hook: "A hook", video: "vid1", start: 100, end: 140 };
+  assert.deepEqual(validatePlan(writeRun(home, "20261115-2113", [ok])), { ok: true, items: 1 });
+  assert.deepEqual(validatePlan(writeRun(home, "20261115-2114", [{ ...ok, hook: null }])), { ok: true, items: 1 });
+  const bad = (extra) => { const p = writeRun(home, "20261115-2200", [{ ...ok, ...extra }]); return () => validatePlan(p); };
+  assert.throws(bad({ hook: 5 }), /item 1: hook must be text or null/);
+  assert.throws(bad({ start: "x" }), /item 1: start and end must be seconds/);
+  assert.throws(bad({ end: 90 }), /item 1: start and end must be seconds/);
+  assert.throws(bad({ video: "" }), /item 1: video must be text/);
 });

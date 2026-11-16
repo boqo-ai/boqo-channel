@@ -1,7 +1,7 @@
 ---
 name: boqo-channel
 description: "Use when the person wants a YouTube channel clipped automatically every day, or runs /boqo-channel: once a day it lists each followed channel's new long videos, makes branded vertical 9:16 clips with captions and their logo on their own machine (yt-dlp, ffmpeg) with the moments picked by you, and spreads the posts across the day through boqo only on their rule."
-argument-hint: "[setup]"
+argument-hint: "[setup | timer]"
 ---
 
 # /boqo-channel
@@ -18,6 +18,10 @@ to transcribe a video with no captions, when the person chose that and said yes 
 
 **A daily run, not a session.** `/boqo-channel` clips what is new, plans the posts, reports, and ends. It is meant to
 run once a day (Trigger).
+
+**Attended or not.** `/boqo-channel timer` is the daily timer's own prompt (Trigger), and says nobody is there: an
+unattended run asks nothing it must wait for, and never holds a video for a question (step 4.2, Held videos). A plain
+`/boqo-channel`, or any other words from the person, is an attended run: the person is in the chat.
 
 - **Tools:** `node "$HOME/.boqo-channel/tools/<tool>.mjs"`, always by that path. Commands are for a POSIX shell
   (macOS, Linux, and on Windows Git Bash or WSL).
@@ -94,9 +98,11 @@ EOF
   channels this run, and finish with what is done. It is no failure of the video: its line is `limited`, never
   `failed` (step 4), and it is tried again tomorrow.
 - **No whisper in a daily run.** A video with no captions is noted for the report, which offers local transcription
-  (A video with no captions). With `"transcript": "boqo"`, the run offers boqo's transcript instead (step 4b).
+  (A video with no captions). With `"transcript": "boqo"`, an attended run offers boqo's transcript instead (Held
+  videos).
 - **Ask before boqo transcribes.** It spends credits: 1 for each started 10 minutes of audio, at least 1 a video.
-  The run asks once, for all of a day's videos together, and says the total minutes and credits (step 4b).
+  An attended run asks once, for all of a day's videos together, and says the total minutes and credits (Held
+  videos), after the day's plan and report: the clips of the videos that have captions are never kept waiting for it.
 - **The person's language.** Answer in the language the person writes in. Titles and hooks are in the video's
   language. Files stay in English.
 - **Short messages:** one line as each video starts (its title, its length, the number of clips), and the report at
@@ -172,14 +178,18 @@ what the person names.
       runs now, before the request (step 4.3), which reads `<video>/comments.json` once. The `rm` clears a language
       file an earlier try left. Tell the person, in one line, the title and the length.
    2. **No captions** (`"captions": "none"`): YouTube may not have made them yet.
-      - `"transcript": "boqo"` in `config.json` and boqo's `create_upload` among your tools (onboarding.md → 2 says
-        how to find a deferred one): hold the video for step 4b. Say nothing, and go on with the next video.
+      - An attended run, `"transcript": "boqo"` in `config.json` and boqo's `create_upload` among your tools
+        (onboarding.md → 2 says how to find a deferred one): hold the video for Held videos. Add it to
+        `<run>/held.json`, an array of `{"channel": "<channel>", "id", "url", "title", "duration"}` (write the whole
+        file again), say nothing, and go on with the next video. It is not marked, and its `started` line stays
+        open until Held videos ends it.
       - Otherwise append its `no captions` line. When step 4.0 showed a `no captions` line dated before today, it
         still has none a day later: mark it (step 4.13). A line from today (a rerun) does not count. Otherwise
         leave it unmarked, and tomorrow's run looks again. Note it for the report either way (with a boqo failure's
-        reason, step 4b, when there was one), and go on with the next video. Its `info.json` stays, for A video with
+        reason, Held videos, when there was one; and, with `"transcript": "boqo"` in an unattended run, that boqo can
+        transcribe it, with its minutes and credits, when the person asks), and go on with the next video. Its `info.json` stays, for A video with
         no captions.
-   3. **Request.** `<video>/segments.json` (sentences) exists after step 4.1, or after step 4b's boqo transcript. With
+   3. **Request.** `<video>/segments.json` (sentences) exists after step 4.1, or after Held videos' boqo transcript. With
       no file there, the transcript step failed: note it and give the video up as step 4.2's second rule does.
       ```sh
       node "$HOME/.boqo-channel/tools/select-request.mjs" --run "<video>"
@@ -249,38 +259,6 @@ what the person names.
    limit is no error of the video (Rules): the same clean-up, its `limited` line, unmarked, and no further video or
    channel this run (step 5).
 
-4b. **Videos held for boqo's transcript** (step 4.2). None held: go on to step 5. Otherwise ask once, for all of them
-   together, in one line, and wait for the answer (a lock a run leaves clears after 6 hours): "No captions on <V>
-   videos: boqo can transcribe them, <N> minutes in all, <C> credits (1 for each started 10 minutes, at least 1 a
-   video). Yes?" `<N>` is the sum of each video's `duration` rounded up to whole minutes, `<C>` the sum, over the
-   videos, of its `duration` divided by 600, rounded up, at least 1. A no: each held video follows step 4.2's
-   second rule. A yes: for each held video in order, items 1 to 4 here, then its steps 4.3 to 4.13, `<video>` as
-   before:
-   1. The audio, from this machine's own address (never mp3: boqo reads m4a, webm/opus, ogg, flac and wav):
-      ```sh
-      yt-dlp -q --js-runtimes node --no-playlist -f "ba[ext=m4a]/ba[ext=webm]" -o "<video>/audio.%(ext)s" "<url>"
-      node "$HOME/.boqo-channel/tools/boqo-upload.mjs" probe-audio "<video>/audio.<ext>"
-      ```
-      `ls "<video>"` gives `<ext>`. `probe-audio` gives `sizeBytes` and `contentType`.
-   2. `create_upload {filename: "audio.<ext>", contentType, sizeBytes, kind: "transcribe"}`. Write its reply, exactly
-      as it came, to `<video>/upload-audio.json` (live signed URLs: never print them). Then
-      `node "$HOME/.boqo-channel/tools/boqo-upload.mjs" put "<video>/audio.<ext>" --reply "<video>/upload-audio.json"`
-      gives `{"ok": true, "upload_id", …}`; delete `<video>/upload-audio.json`.
-   3. `complete_upload {upload_id}`, then `transcribe {upload_id}`: `{id, credits, minutes}`. A link in either reply
-      (the connection's daily cap): give it to the person, and take no further boqo transcript this run: this video
-      and every held one after it follow step 4.2's second rule.
-   4. `get_transcript {id}`, about every 20 seconds (a background `sleep 20`), until `status` is `done` (with a
-      `url`) or `failed` (with an `error`); an answer of `{not_found: true}` is final, so stop polling and go to
-      the failure line below. Then, with the `url` exactly as it came and never shown:
-      ```sh
-      node "$HOME/.boqo-channel/tools/transcript-boqo.mjs" --url "<url>" --run "<video>"
-      ```
-      It writes `<video>/words.json`, `<video>/segments.json` and `<video>/transcript-language.txt`. Note for the
-      report that boqo transcribed it and the credits spent.
-
-   On any failure above (a refusal, a failed job, an error from a tool, `not_found`): note "boqo's transcript failed
-   (<the reason, as it came>)" for the report, and this video follows step 4.2's second rule. Whisper does not run
-   in a daily run.
 5. **Plan the posts.** A plan covers one day, the posting day, and only channels with `accounts`.
    - **An unanswered plan,** under `ask`: `node "$HOME/.boqo-channel/tools/plan.mjs" pending`. A `plan` it names is
      an earlier run's that nobody answered: `node "$HOME/.boqo-channel/tools/plan.mjs" skip "<that plan>" all`, and
@@ -295,9 +273,11 @@ what the person names.
      ```sh
      node "$HOME/.boqo-channel/tools/plan.mjs" clips "<newest video>" "<next video>" --max <perDay.max>
      ```
-     gives `{"clips": [{video, file, title, hook}], "kept", "rendered"}`: at most `perDay.max` clips, the plan's
-     posts for that channel. The clips not planned stay on disk. A post's `clip` is its `file` and its `title` is its
-     `title`.
+     gives `{"clips": [{video, id, file, title, hook, start, end}], "kept", "rendered", "excluded"}`: at most
+     `perDay.max` clips, the plan's posts for that channel. A clip whose moment a posted plan item already carries
+     (same video `id`, overlapping `start`-`end`) is left out and counted in `excluded`, so a video clipped again
+     (Redo one clip) never offers a clip that went out. The clips not planned stay on disk. A post's `clip` is its
+     `file`, its `title` is its `title`.
    - **`{"auto": N}`:** first the posts already made for that day,
      `node "$HOME/.boqo-channel/tools/plan.mjs" count --date <YYYY-MM-DD>` (`{"posted": P}`); then at most N − P
      clips in all: every channel's first, then every channel's second, until N − P.
@@ -309,8 +289,10 @@ what the person names.
      the same account share one call, their posts taking turns.
 
    Write `<run>/plan.json`, one item per post:
-   `{"clip": "<video>/out/clip-01.mp4", "title": "<its title>", "channel": "<channel>", "accountIds": ["<id>"],
-   "handles": ["@name"], "when": {"date": "YYYY-MM-DD", "time": "HH:MM"}}`. Nothing to post: `[]`. Then check it:
+   `{"clip": "<its file>", "title": "<its title>", "hook": "<its hook, or null>", "video": "<its id>", "start": <s>,
+   "end": <e>, "channel": "<channel>", "accountIds": ["<id>"], "handles": ["@name"], "when": {"date": "YYYY-MM-DD",
+   "time": "HH:MM"}}`: `hook`, `id`, `start` and `end` as `plan.mjs clips` gave them (`post.md` posts the hook; a
+   later plan knows a posted moment by its video and edges). Nothing to post: `[]`. Then check it:
    ```sh
    node "$HOME/.boqo-channel/tools/plan.mjs" validate "<run>/plan.json"
    ```
@@ -327,8 +309,9 @@ what the person names.
    - each channel in a line: the videos clipped (title, number of clips), any skipped with why (no captions yet,
      tried again tomorrow; no captions a day later; an error in its words; failed twice; YouTube's limit), and on its
      first run how many older videos were left alone (step 3's `marked`);
-   - boqo's transcripts (step 4b), in one line: the videos it transcribed and the credits spent, or why one failed
-     (`"transcript": "boqo"` only);
+   - videos with no captions under `"transcript": "boqo"`: in an unattended run, one line naming them and that boqo
+     can transcribe them (minutes and credits in all) when the person asks (A video with no captions); in an attended
+     run Held videos asks (step 8), so no line here;
    - an unanswered plan skipped in step 5: one line, its number of posts dropped, their clips still on disk;
    - the posts: one line each, `<date> <time> · <handles> · <title>`, then, under `auto`, posted or the refusal;
      under `ask`, the one question: "Post these?";
@@ -338,7 +321,10 @@ what the person names.
      ```sh
      find "<home>/boqo-channel/runs" -mindepth 1 -maxdepth 1 -type d -mtime +14 -exec rm -rf {} +
      ```
-8. **Unlock and the timer.** `rm -f "<home>/boqo-channel/lock"`, then Trigger (its question waits when the report asked
+8. **Held videos** (Held videos), when `<run>/held.json` exists and the report asked nothing else (`auto`, or an
+   empty plan). When the report asked "Post these?" they wait for the answer (Posting the plan, its last step), and
+   `<run>/held.json` keeps them.
+9. **Unlock and the timer.** `rm -f "<home>/boqo-channel/lock"`, then Trigger (its question waits when the report asked
    "Post these?").
 
 ## Posting the plan
@@ -360,7 +346,8 @@ From step 6 under `auto`, or when the person answers the report's question, in t
      the yes was to another question. Show its `lines`, ask "Post these?" again, release the lock, and stop: the
      answer to that starts Posting the plan again.
    - A no, or no answer: `node "$HOME/.boqo-channel/tools/plan.mjs" skip "<plan>" all`, its `posting` line (The
-     log), release the lock, and stop: the clips stay on disk. Then the timer question, when it is still to come
+     log), release the lock, and stop: the clips stay on disk. Then Held videos, when `<run>/held.json` exists
+     (`<run>` the plan's folder), then the timer question, when it is still to come
      (Trigger). A `skip` that fails: A failed stamp (step 4).
    - A yes to some ("not the second one"): `plan.mjs skip "<plan>" <n>` for each one left out (one that fails: A
      failed stamp, step 4).
@@ -388,7 +375,8 @@ From step 6 under `auto`, or when the person answers the report's question, in t
    fails too, tell them plainly never to answer yes to this plan again, and name the clips that went. Never go on
    posting with a plan that cannot record what went.
 5. Its `posting` line goes into `runs.md` (The log), one line tells the person what went where and when, and the lock
-   is released. Then the timer question, when it is still to come (Trigger).
+   is released. Then Held videos, when `<run>/held.json` exists (`<run>` the plan's folder), then the timer question,
+   when it is still to come (Trigger).
 
 **A skipped item, later:** only on "post <title> anyway", for that item alone: the lock, a fresh `post_video` by
 `post.md`, then `plan.mjs posted "<plan>" <n>`, `<plan>` the plan that holds it (posted replaces the skip). A bare yes
@@ -398,9 +386,9 @@ never posts a skipped item.
 
 The run happens once a day, at `runAt`.
 
-**One question at a time.** The timer question is never asked beside "Post these?": it ends the report only when the
-report asks nothing else, and otherwise comes right after the person's answer about the posts (Posting the plan, the
-no in step 2 or step 5). When both are open anyway (a plan from another chat still waits), a bare "yes" or "no"
+**One question at a time.** The held-videos question (Held videos) and the timer question are never asked beside
+"Post these?": they end the run only when the report asks nothing else, and otherwise come, the held one first, right
+after the person's answer about the posts (Posting the plan, the no in step 2 or step 5). When both are open anyway (a plan from another chat still waits), a bare "yes" or "no"
 answers neither: ask "Which one: posting these, or the daily timer?"
 
 - **Claude Code:** a timer in this session. With no `timer` in `config.json`, ask once: "Run this every day at
@@ -408,14 +396,61 @@ answers neither: ask "Which one: posting these, or the daily timer?"
   step: approve each one once, or keep this session open where you can see it." Write the answer as `"timer": "yes"`
   or `"no"`. No `CronCreate` among your tools (a deferred one counting): do as any other agent does (below). On the
   yes, and at the end of every run after it:
-  1. `CronList`, and `CronDelete` the job whose prompt is `/boqo-channel`, if there is one;
-  2. `CronCreate {cron: "<mm> <hh> * * *", prompt: "/boqo-channel", recurring: true}`, `<hh>:<mm>` being `runAt`
-     (`21:13` is `13 21 * * *`).
+  1. `CronList`, and `CronDelete` the job whose prompt is `/boqo-channel` or `/boqo-channel timer`, if there is one;
+  2. `CronCreate {cron: "<mm> <hh> * * *", prompt: "/boqo-channel timer", recurring: true}`, `<hh>:<mm>` being
+     `runAt` (`21:13` is `13 21 * * *`). The prompt says `timer` so that the run knows nobody is there to answer
+     (Attended or not).
 
   A recurring job expires after 7 days, so creating it again each run keeps it alive. The job lives in this session
   only: when the person opens a new session, the first `/boqo-channel` there creates it again (`timer` is `yes`).
 - **Any other agent:** with no `timer` in `config.json`, end the report with "Run /boqo-channel each day, at
-  <runAt>.", and write `"timer": "no"`, so it is said once.
+  <runAt>; from a scheduler nobody watches, run `/boqo-channel timer`.", and write `"timer": "no"`, so it is said once.
+
+## Held videos
+
+Videos step 4.2 held: no captions, `"transcript": "boqo"`, an attended run. `<run>/held.json` lists them. No file:
+nothing is held; go on. It runs after the day's plan and report (step 8), or right after the person's answer about
+the posts (Posting the plan), so the videos with captions are planned and reported first and never wait for it. An
+unattended run holds nothing and never asks (Attended or not).
+
+Ask once, for all the held videos together, in one line, and wait for the answer: "No captions on <V> videos: boqo can
+transcribe them, <N> minutes in all, <C> credits (1 for each started 10 minutes, at least 1 a video). Yes?" `<N>` is
+the sum of each video's `duration` rounded up to whole minutes, `<C>` the sum, over the videos, of its `duration`
+divided by 600, rounded up, at least 1.
+- **A no** (or a refusal of the whole ask): each held video follows step 4.2's second rule, its `no captions` line
+  appended and the video left unmarked, and `<run>/held.json` is deleted.
+- **A yes:** take the lock when this run does not hold it (The daily run, step 1; `file exists`: say a run or a posting
+  is going, and that the person can ask for these videos again, as in A video with no captions), and release it at the
+  end. For each held video in order, `<video>` being `<run>/<id>`, items 1 to 4 here, then its steps 4.3 to 4.13
+  (its channel from `held.json`); then `<run>/held.json` is deleted. Then steps 5 to 7 for the clips of these videos
+  alone, the plan going into a new `<run>` folder named for now (an earlier plan nobody answered cannot be waiting:
+  this ran after its answer, or the report asked nothing).
+
+1. The audio, from this machine's own address (never mp3: boqo reads m4a, webm/opus, ogg, flac and wav):
+   ```sh
+   yt-dlp -q --js-runtimes node --no-playlist -f "ba[ext=m4a]/ba[ext=webm]" -o "<video>/audio.%(ext)s" "<url>"
+   node "$HOME/.boqo-channel/tools/boqo-upload.mjs" probe-audio "<video>/audio.<ext>"
+   ```
+   `ls "<video>"` gives `<ext>`. `probe-audio` gives `sizeBytes` and `contentType`.
+2. `create_upload {filename: "audio.<ext>", contentType, sizeBytes, kind: "transcribe"}`. Write its reply, exactly
+   as it came, to `<video>/upload-audio.json` (live signed URLs: never print them). Then
+   `node "$HOME/.boqo-channel/tools/boqo-upload.mjs" put "<video>/audio.<ext>" --reply "<video>/upload-audio.json"`
+   gives `{"ok": true, "upload_id", …}`; delete `<video>/upload-audio.json`.
+3. `complete_upload {upload_id}`, then `transcribe {upload_id}`: `{id, credits, minutes}`. A link in either reply
+   (the connection's daily cap): give it to the person, and take no further boqo transcript this run: this video
+   and every held one after it follow step 4.2's second rule.
+4. `get_transcript {id}`, about every 20 seconds (a background `sleep 20`), until `status` is `done` (with a
+   `url`) or `failed` (with an `error`); an answer of `{not_found: true}` is final, so stop polling and go to
+   the failure line below. Then, with the `url` exactly as it came and never shown:
+   ```sh
+   node "$HOME/.boqo-channel/tools/transcript-boqo.mjs" --url "<url>" --run "<video>"
+   ```
+   It writes `<video>/words.json`, `<video>/segments.json` and `<video>/transcript-language.txt`. Note for the
+   report that boqo transcribed it and the credits spent.
+
+On any failure above (a refusal, a failed job, an error from a tool, `not_found`): note "boqo's transcript failed
+(<the reason, as it came>)" for the report, and this video follows step 4.2's second rule. Whisper does not run in a
+daily run.
 
 ## A video with no captions
 
@@ -423,7 +458,7 @@ The report names it. When the person asks to clip it, transcribe it here. It is 
 (step 4.13), so no run clips it again.
 1. Run `node "$HOME/.boqo-channel/tools/doctor.mjs" --whisper optional`. When its `whisper` or `whisper-model` check
    fails, give that check's hint, and stop (with `"transcript": "boqo"` and boqo's `create_upload` among your tools,
-   the person can ask for boqo's transcript instead: step 4b's question, and its items 1 to 4 in place of 2 to 4
+   the person can ask for boqo's transcript instead: Held videos' question and its items 1 to 4, in place of 2 to 4
    here). Otherwise say how long it takes, about 13 s per minute of audio on an
    8-core CPU with the small model, more on fewer cores, and wait for a yes. When `plan.mjs pending` names a plan
    the person has not answered, say too that this video's plan replaces it (step 5) unless they answer it first.
@@ -468,4 +503,5 @@ or a posting is going, and to ask again once it is done), and release it at the 
   them), since their files will not be the same clips. Change `<video>/selection.json` (step 4.4, the new edge on a
   transcript line's timestamp), run the check (step 4.5), which rebuilds the record, delete `<video>/out`, and go on
   at step 4.6. Every clip of the video renders again, and its posts are planned again only on the person's ask (step 5,
-  a new `<run>` folder named for now).
+  a new `<run>` folder named for now). `plan.mjs clips` leaves out any clip whose moment a posted item already
+  carries, so a clip that went out is never offered again, whatever it is now called.

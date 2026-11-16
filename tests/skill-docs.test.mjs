@@ -12,6 +12,7 @@ const read = (p) => readFileSync(p, 'utf8').replace(/\r\n/g, '\n');
 const docs = readdirSync(skillDir).filter((f) => f.endsWith('.md')).map((f) => [f, read(join(skillDir, f))]);
 docs.push(['INSTALL.md', read(join(root, 'INSTALL.md'))]);
 const skill = read(join(skillDir, 'SKILL.md'));
+const install = read(join(root, 'INSTALL.md'));
 
 test('every tool a doc runs exists in tools/', () => {
   let seen = 0;
@@ -43,13 +44,34 @@ test('select.md, stranger.md and panels.md carry their copy header first, then t
   }
 });
 
-test('with transcript "boqo" the run asks once for all the day\'s videos, naming minutes and credits', () => {
-  assert.match(skill, /ask once, for all of them\s+together/);
-  assert.match(skill, /minutes in all, <C> credits/);
-  assert.match(skill, /1 for each started 10 minutes, at least 1 a\s+video/);
+test('with transcript "boqo" an attended run asks once for all the held videos, after the plan and the report', () => {
+  const held = skill.slice(skill.indexOf('## Held videos'), skill.indexOf('## A video with no captions'));
+  assert.match(held, /Ask once, for all the held videos together/);
+  assert.match(held, /minutes in all, <C> credits/);
+  assert.match(held, /1 for each started 10 minutes, at least 1 a video/);
   assert.match(skill, /"transcript": "boqo"/);
   // A16b's review: get_transcript's {not_found: true} is final; the run stops polling and falls back in one line.
-  assert.match(skill, /\{not_found: true\}` is final, so stop polling/);
+  assert.match(held, /\{not_found: true\}` is final, so stop polling/);
+  // step 4 holds the video and goes on; step 8, after the report (step 7), asks
+  assert.doesNotMatch(skill.slice(skill.indexOf('4. **Each video,**'), skill.indexOf('5. **Plan the posts.**')), /kind: "transcribe"|Yes\?/);
+  assert.ok(skill.indexOf('7. **Report,**') < skill.indexOf('8. **Held videos**'));
+  assert.ok(skill.indexOf('8. **Held videos**') < skill.indexOf('9. **Unlock and the timer.**'));
+});
+
+test('an unattended run (the timer\'s own prompt) never waits for the question', () => {
+  assert.match(skill, /\/boqo-channel timer` is the daily timer's own prompt/);
+  assert.match(skill, /prompt: "\/boqo-channel timer"/);
+  assert.match(skill, /An\s+unattended run holds nothing and never asks/);
+  assert.match(skill, /argument-hint: "\[setup \| timer\]"/);
+  assert.match(install, /`\/boqo-channel timer`/);
+});
+
+test('the plan items carry the hook, and post.md posts it through the caption command, with its copy header', () => {
+  const post = read(join(skillDir, 'post.md'));
+  assert.match(post.split('\n')[0], /^<!-- copied from boqo-ai\/boqo-clips skills\/boqo-clips\/post\.md @ 40e164e; keep in step -->$/);
+  assert.match(post, /boqo-upload\.mjs" caption --title/);
+  assert.match(post, /Captions written by the agent/);
+  assert.match(skill, /"hook": "<its hook, or null>"/);
 });
 
 test('the plan is taken from clips.json in final order, rendered clips only', () => {

@@ -40,7 +40,7 @@ and Linux.
 Run `/boqo-channel` once a day. In Claude Code it offers a daily timer at your run time. The timer lives in that
 Claude Code session: it fires only while the session stays open on a computer that is awake, and a run may stop to
 ask your permission for a step, so approve each one once or keep the session where you see it. In other agents, run
-`/boqo-channel` each day yourself.
+`/boqo-channel` each day yourself, or `/boqo-channel timer` from a scheduler nobody watches (it never waits for an answer).
 
 ## What runs where
 
