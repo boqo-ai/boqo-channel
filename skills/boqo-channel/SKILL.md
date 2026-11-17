@@ -147,10 +147,11 @@ what the person names.
    `rm -f "<home>/boqo-channel/lock"`.
 2. **Brand and config.** `node "$HOME/.boqo-channel/tools/brand.mjs" show` (the default kit) and `config.json`. No kit
    or no config: release the lock and go to Setup. Keep the kit's `name` for `--brand`, then `mkdir -p "<run>"`, and
-   delete the upload replies a posting that died left (they hold live signed URLs; no posting runs while this run
-   holds the lock):
+   delete the upload replies that a posting (`<run>/upload-<k>.json`) or a held video's transcript
+   (`<video>/upload-audio.json`) left when it died (they hold live signed URLs; neither runs while this run holds
+   the lock):
    ```sh
-   find "<home>/boqo-channel/runs" -mindepth 2 -maxdepth 2 -type f -name 'upload-*.json' -delete
+   find "<home>/boqo-channel/runs" -mindepth 2 -maxdepth 3 -type f -name 'upload-*.json' -delete
    ```
 3. **New videos.** For each channel in `config.json`, in order:
    ```sh

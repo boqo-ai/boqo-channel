@@ -193,3 +193,24 @@ test('INSTALL Updating asks before it installs the packages when an older instal
   const ask = upd.search(/no `node_modules` .*ask step 4's question first/);
   assert.ok(check !== -1 && check < ask && ask < upd.indexOf('npm ci'), 'the node_modules check, then the question, then npm ci');
 });
+
+// Final review, Minor 9: the step 2 sweep deletes every upload reply a posting or a held video's transcript left (live
+// signed URLs). Each reply file the docs write sits at a depth below runs/ given by its folder: <run> is 1 level down,
+// <video> (<run>/<video id>) 2; the sweep's depths and its name pattern must take every one of them.
+test('the step 2 sweep reaches every upload reply file the docs write', () => {
+  const step2 = skill.slice(skill.indexOf('2. **Brand and config.**'), skill.indexOf('3. **New videos.**'));
+  const m = /find "<home>\/boqo-channel\/runs" -mindepth (\d+) -maxdepth (\d+) -type f -name '([^']+)' -delete/.exec(step2);
+  assert.ok(m, 'step 2 sweeps the runs folder for upload replies');
+  const [min, max] = [Number(m[1]), Number(m[2])];
+  const glob = new RegExp(`^${m[3].replace(/[.]/g, '\\.').replace(/\*/g, '.*')}$`);
+  const levels = { '<run>': 1, '<video>': 2 };
+  const replies = new Set();
+  for (const [, text] of docs) for (const r of text.matchAll(/(<run>|<video>)\/(upload-[^`"\s/]*\.json)/g)) replies.add(`${r[1]}/${r[2]}`);
+  assert.ok(replies.has('<run>/upload-<k>.json') && replies.has('<video>/upload-audio.json'), [...replies].join(', '));
+  for (const reply of replies) {
+    const [folder, name] = reply.split('/');
+    const depth = levels[folder] + 1;
+    assert.ok(min <= depth && depth <= max, `${reply} sits ${depth} deep; the sweep takes ${min} to ${max}`);
+    assert.match(name.replace(/<k>/g, '1'), glob, `${reply} does not match the sweep's '${m[3]}'`);
+  }
+});
