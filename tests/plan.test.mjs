@@ -2,10 +2,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, join, resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { countPosted, localPath, pending, runCli, stamp, validatePlan } from "../lib/plan.mjs";
+import { countPosted, dayPosts, localPath, pending, runCli, stamp, validatePlan } from "../lib/plan.mjs";
 
 const TOOL = fileURLToPath(new URL("../tools/plan.mjs", import.meta.url));
 const tmp = () => mkdtempSync(join(tmpdir(), "boqo channel plan-")); // a space, as in a real home folder
@@ -125,7 +125,8 @@ test("validate passes a well-formed plan, and an empty one", () => {
   const dir = join(home, "boqo-channel", "runs", "20261115-2113", "vid00000001", "out");
   mkdirSync(dir, { recursive: true });
   const clip = (k) => { const f = join(dir, `clip-0${k}.mp4`); writeFileSync(f, "x"); return f; };
-  const p = writeRun(home, "20261115-2113", [{ ...item(1), clip: clip(1) }, { ...item(2), clip: clip(2) }]);
+  const moment = (k) => ({ video: "vid00000001", start: k * 100, end: k * 100 + 40 });
+  const p = writeRun(home, "20261115-2113", [{ ...item(1), clip: clip(1), ...moment(1) }, { ...item(2), clip: clip(2), ...moment(2) }]);
   assert.deepEqual(validatePlan(p), { ok: true, items: 2 });
   const empty = writeRun(home, "20261115-2200", []);
   assert.deepEqual(validatePlan(empty), { ok: true, items: 0 });
@@ -137,7 +138,7 @@ test("validate names every item that would not post as planned", () => {
   mkdirSync(dir, { recursive: true });
   const c1 = join(dir, "clip-01.mp4");
   writeFileSync(c1, "x");
-  const good = { ...item(1), clip: c1 };
+  const good = { ...item(1), clip: c1, video: "vid00000001", start: 100, end: 140 };
   const cases = [
     [{ ...good, clip: join(dir, "clip-09.mp4") }, /item 1: no clip file at/],
     [{ ...good, clip: "out/clip-01.mp4" }, /item 1: clip is not a full path/],
@@ -213,7 +214,7 @@ test("count ignores a moved-aside plan it cannot read, and a skipped item in one
   assert.equal(countPosted("2026-11-16", home).posted, 1);
 });
 
-test("runCli takes the six commands and nothing else", () => {
+test("runCli takes the seven commands and nothing else", () => {
   const home = tmp();
   const p = writeRun(home, "20261115-2113", [item(1)]);
   assert.deepEqual(runCli(["pending"], { home }), { plan: p, items: [1], lines: ["2026-11-16 09:00 · @a · Clip 1"] });
@@ -296,7 +297,7 @@ test("several videos take turns, each in its own final order, the first video fi
   const home = tmp();
   const a = writeVideo(home, "newer", [renderedRow(1, 90), renderedRow(2, 80), renderedRow(3, 70)]);
   const b = writeVideo(home, "older", [renderedRow(1, 99), renderedRow(2, 60)]);
-  const titles = (r) => r.clips.map((c) => `${basename(c.video)}:${c.title}`);
+  const titles = (r) => r.clips.map((c) => `${c.id}:${c.title}`);
   assert.deepEqual(titles(runCli(["clips", a, b, "--max", "4"], { home })), ["newer:Clip 1", "older:Clip 1", "newer:Clip 2", "older:Clip 2"]);
   assert.deepEqual(titles(runCli(["clips", a, b], { home })), ["newer:Clip 1", "older:Clip 1", "newer:Clip 2", "older:Clip 2", "newer:Clip 3"]);
 });
@@ -380,7 +381,7 @@ test("each clip carries its video id and edges, for the plan item that will reco
 
 test("validate accepts a hook that is a string or null, and the clip's moment; it refuses the rest", () => {
   const home = tmp();
-  const file = join(home, "clip-01.mp4");
+  const file = join(writeVideo(home, "vid1", []), "out", "clip-01.mp4");
   writeFileSync(file, "x");
   const ok = { ...item(1), clip: file, hook: "A hook", video: "vid1", start: 100, end: 140 };
   assert.deepEqual(validatePlan(writeRun(home, "20261115-2113", [ok])), { ok: true, items: 1 });
@@ -389,5 +390,106 @@ test("validate accepts a hook that is a string or null, and the clip's moment; i
   assert.throws(bad({ hook: 5 }), /item 1: hook must be text or null/);
   assert.throws(bad({ start: "x" }), /item 1: start and end must be seconds/);
   assert.throws(bad({ end: 90 }), /item 1: start and end must be seconds/);
-  assert.throws(bad({ video: "" }), /item 1: video must be text/);
+  assert.throws(bad({ video: "" }), /item 1: no video/);
+});
+
+// --- the plan item's video is the id plan.mjs clips prints: a path, or no moment at all, would turn the never-re-offer
+// rule off without a word (final review, Important 4) ----------------------------------------------------------------
+
+test("validate requires the clip's moment, and a video that is the id plan.mjs clips gives, never its folder", () => {
+  const home = tmp();
+  const video = writeVideo(home, "y1-9yeYLJUo", [renderedRow(1, 90)]);
+  writeFileSync(join(video, "out", "clip-01.mp4"), "x");
+  const [c] = runCli(["clips", video], { home }).clips;
+  const planned = { ...item(1), clip: c.file, title: c.title, hook: c.hook, video: c.id, start: c.start, end: c.end };
+  assert.deepEqual(validatePlan(writeRun(home, "20261115-2200", [planned])), { ok: true, items: 1 });
+  const bad = (extra, drop = []) => {
+    const x = { ...planned, ...extra };
+    for (const k of drop) delete x[k];
+    const p = writeRun(home, "20261115-2200", [x]);
+    return () => validatePlan(p);
+  };
+  assert.throws(bad({}, ["video"]), /item 1: no video/);
+  assert.throws(bad({ video: video }), /item 1: video must be "y1-9yeYLJUo", the id plan\.mjs clips gives/);
+  assert.throws(bad({ video: `${video}/` }), /item 1: video must be "y1-9yeYLJUo"/);
+  assert.throws(bad({ video: "another1234" }), /item 1: video must be "y1-9yeYLJUo"/);
+  assert.throws(bad({}, ["start"]), /item 1: start and end must be seconds/);
+  assert.throws(bad({}, ["end"]), /item 1: start and end must be seconds/);
+  assert.throws(bad({}, ["start", "end"]), /item 1: start and end must be seconds/);
+});
+
+test("clips gives each clip's id and file, and no folder path a plan item could take for its video", () => {
+  const home = tmp();
+  const video = writeVideo(home, "vid1", [renderedRow(1, 90)]);
+  const [c] = runCli(["clips", video], { home }).clips;
+  assert.deepEqual(Object.keys(c).sort(), ["end", "file", "hook", "id", "start", "title"]);
+});
+
+test("a posted item from an older plan whose video is the folder's path still hides its clip", () => {
+  const home = tmp();
+  const video = writeVideo(home, "vid1", [renderedRow(1, 90), renderedRow(2, 80)]);
+  writeRun(home, "20261114-2113", [postedItem(video, 100, 140), postedItem(`${video}/`, 200, 240)]);
+  const r = runCli(["clips", video], { home });
+  assert.deepEqual(r.clips.map((c) => c.title), []);
+  assert.equal(r.excluded, 2);
+});
+
+// --- a second plan for one posting day: what the day already holds (final review, Important 2) ----------------------
+
+const at = (k, date, time, channel, accountIds, extra = {}) => ({
+  ...item(k, date), channel, accountIds, handles: accountIds.map((a) => `@${a}`), when: { date, time }, ...extra,
+});
+
+test("day counts a posting day's posts per channel, and their times per account: posted anywhere, open in the newest plan", () => {
+  const home = tmp();
+  const D = "2026-11-16";
+  const posted = { posted: T1.toISOString() };
+  const skipped = { skipped: T1.toISOString() };
+  writeRun(home, "20261115-0800", [
+    at(1, D, "09:00", "@x", ["a"], posted),
+    at(2, D, "15:00", "@x", ["a"]),            // open in an older plan: never offered again, so it holds nothing
+    at(3, D, "12:00", "@x", ["a"], skipped),
+  ]);
+  const aside = writeRun(home, "20261115-1200", [at(1, D, "12:00", "@y", ["b"], posted), at(2, D, "13:00", "@y", ["b"])]);
+  renameSync(aside, `${aside}.bad`);           // moved aside: its posts went, its open item never will
+  const newest = writeRun(home, "20261115-2113", [
+    at(1, D, "21:00", "@x", ["a", "b"], posted),
+    at(2, D, "18:00", "@y", ["b"]),             // open in the newest plan: a yes can still post it
+    at(3, D, "10:00", "@y", ["b"], skipped),
+    at(4, "2026-11-17", "09:00", "@x", ["a"], posted),
+  ]);
+  assert.deepEqual(dayPosts(D, { home }), {
+    date: D,
+    channels: { "@x": 2, "@y": 2 },
+    accounts: { a: ["09:00", "21:00"], b: ["12:00", "18:00", "21:00"] },
+  });
+  // re-timing the newest plan's own open items (a late yes): they are what is being planned, so they hold nothing
+  assert.deepEqual(dayPosts(D, { home, except: newest }), {
+    date: D,
+    channels: { "@x": 2, "@y": 1 },
+    accounts: { a: ["09:00", "21:00"], b: ["12:00", "21:00"] },
+  });
+  assert.deepEqual(runCli(["day", "--date", D, "--except", newest], { home }), dayPosts(D, { home, except: newest }));
+  assert.deepEqual(dayPosts("2026-11-18", { home }), { date: "2026-11-18", channels: {}, accounts: {} });
+});
+
+test("day refuses a bad date, an --except that names no plan, and a damaged live plan", () => {
+  const home = tmp();
+  const p = writeRun(home, "20261115-2113", [item(1)]);
+  for (const bad of [["day"], ["day", "--date"], ["day", "2026-11-16"], ["day", "--date", "2026-11-16", "x"], ["day", "--date", "2026-11-16", "--except"]]) {
+    assert.throws(() => runCli(bad, { home }), /usage/, JSON.stringify(bad));
+  }
+  assert.throws(() => runCli(["day", "--date", "2026-02-30"], { home }), /YYYY-MM-DD/);
+  assert.throws(() => runCli(["day", "--date", "2026-11-16", "--except", join(home, "nope.json")], { home }), /no plan at/);
+  writeFileSync(p, "{not json");
+  assert.throws(() => runCli(["day", "--date", "2026-11-16"], { home }), /move it aside to plan\.json\.bad/);
+});
+
+test("the day command prints one JSON line from the CLI", () => {
+  const home = tmp();
+  writeRun(home, "20261115-2113", [at(1, "2026-11-16", "09:00", "@x", ["a"], { posted: T1.toISOString() })]);
+  const r = spawnSync(process.execPath, [TOOL, "day", "--date", "2026-11-16"], { env: { ...process.env, BOQO_HOME: home }, encoding: "utf8" });
+  assert.equal(r.status, 0, r.stdout);
+  assert.equal(r.stdout.trim().split("\n").length, 1);
+  assert.deepEqual(JSON.parse(r.stdout), { date: "2026-11-16", channels: { "@x": 1 }, accounts: { a: ["09:00"] } });
 });
