@@ -94,6 +94,10 @@ EOF
 - **One at a time:** the lock (The daily run, step 1) is taken before a run and before posting a plan, and released
   on every way out of either. A clip is posted once: `plan.json` stamps each post, and `post_video` goes once per item,
   never again after an unclear reply (Posting the plan, step 4).
+- **Words never go on a command line.** A title, a hook or the person's own words inside double quotes are the
+  shell's to rewrite (`$100k` loses `$1`, a `"` ends them, a backtick runs a command). The commands here read them
+  from `clips.json`, or from a file you write with your file tool, never with `echo`; a `runs.md` line goes through a
+  quoted heredoc (The log).
 - **One yt-dlp call at a time,** listings included. YouTube rate-limits parallel requests. An error saying `HTTP Error
   429` or `Sign in to confirm you're not a bot` means YouTube is limiting this machine: start no further videos or
   channels this run, and finish with what is done. It is no failure of the video: its line is `limited`, never
@@ -380,8 +384,8 @@ From step 6 under `auto`, or when the person answers the report's question, in t
    - **A refusal,** boqo's own sentence (post.md → Refusals): no stamp, as post.md says.
    - **Anything else** (a timeout, a lost connection, an empty or cut-off reply, an error that is not boqo's
      sentence): the post may have gone through. Never call `post_video` again for this item. Call
-     `list_schedule {accountId}` for each of its accounts: a post whose `clipTitle` is the item's title (or the
-     reworded one post.md step 2 gave), within a day of its `when` (`scheduledAt` is UTC), means it went: stamp it
+     `list_schedule {accountId}` for each of its accounts: a post whose `clipTitle` is the item's title (post.md
+     step 2 writes a reworded one there), within a day of its `when` (`scheduledAt` is UTC), means it went: stamp it
      posted. None: `plan.mjs skip "<plan>" <n>`, so no later yes posts it, and tell the person this clip's post is
      unclear and not in boqo's schedule; they can post it again by asking. Then the next clip.
 
@@ -498,8 +502,8 @@ The report names it. When the person asks to clip it, transcribe it here. It is 
    ```
    then run whisper again with the video's language, `--lang <code>` (`--lang ru`) before `--out`: with a language
    other than English it takes a multilingual model, and `select-request` gets the same `--lang <code>` (step 4.3).
-   `the words file has no words`: whisper heard no speech. Tell the person, and stop. Known limit: whisper can hear a
-   word that is not there ("Oh") in silence at a multiple of 30 s, its window edge; never set an edge on one.
+   `"words": 0` in `<video>/asr.json`: whisper heard no speech. Tell the person, and stop. Known limit: whisper can
+   hear a word that is not there ("Oh") in silence at a multiple of 30 s, its window edge; never set an edge on one.
 4. Steps 4.3 to 4.13 of the daily run, then steps 5 to 7 for its clips alone, the plan going into a new `<run>` folder
    named for now.
 

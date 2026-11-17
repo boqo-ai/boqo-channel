@@ -38,11 +38,17 @@ test('no doc names boqo-clips paths or the v0.1 picks flow', () => {
   }
 });
 
-test('select.md, stranger.md and panels.md carry their copy header first, then their port headers', () => {
-  for (const f of ['select.md', 'stranger.md', 'panels.md']) {
+// The five docs copied from boqo-clips name the commit the engine was synced from (ENGINE.json): a re-sync re-copies
+// them all, and a header left behind says so here.
+const synced = JSON.parse(read(join(root, 'engine', 'ENGINE.json'))).commit.slice(0, 7);
+
+test('the copied docs carry their copy header at the synced commit first; select, stranger and panels their port headers next', () => {
+  for (const f of ['select.md', 'stranger.md', 'panels.md', 'post.md', 'onboarding.md']) {
     const lines = read(join(skillDir, f)).split('\n');
-    assert.match(lines[0], new RegExp(`^<!-- copied from boqo-ai/boqo-clips skills/boqo-clips/${f.replace('.', '\\.')} @ [0-9a-f]{7,}; keep in step -->$`), f);
-    assert.match(lines[1], /^<!-- ported from boqo-ai\/boqo .* @ [0-9a-f]{9}; keep in step -->$/, f);
+    assert.equal(lines[0], `<!-- copied from boqo-ai/boqo-clips skills/boqo-clips/${f} @ ${synced}; keep in step -->`, f);
+    if (['select.md', 'stranger.md', 'panels.md'].includes(f)) {
+      assert.match(lines[1], /^<!-- ported from boqo-ai\/boqo .* @ [0-9a-f]{9}; keep in step -->$/, f);
+    }
   }
 });
 
@@ -129,11 +135,39 @@ test('an unattended run (the timer\'s own prompt) never waits for the question',
 
 test('the plan items carry the hook, and post.md posts it through the caption command, with its copy header', () => {
   const post = read(join(skillDir, 'post.md'));
-  const synced = JSON.parse(read(join(root, 'engine', 'ENGINE.json'))).commit.slice(0, 7);
   assert.equal(post.split('\n')[0], `<!-- copied from boqo-ai/boqo-clips skills/boqo-clips/post.md @ ${synced}; keep in step -->`);
-  assert.match(post, /boqo-upload\.mjs" caption --title/);
   assert.match(post, /Captions written by the agent/);
   assert.match(skill, /"hook": "<its hook, or null>"/);
+});
+
+// Final review, Important 5 (boqo-clips' tool, re-copied): a title or a hook never goes on a shell line, where `$100k`
+// loses `$1`; `name` and `caption` read the clip's row of its video's clips.json. Channel matches an unclear post by the
+// plan item's title, so a reworded title goes into both.
+test('post.md names and captions a clip from its video\'s clips.json, never from words on a command line', () => {
+  const post = read(join(skillDir, 'post.md'));
+  const each = flat(post.slice(post.indexOf('## Each clip'), post.indexOf('3. `create_upload')));
+  assert.match(each, /boqo-upload\.mjs" name --run "<video>" --n <n>`/);
+  assert.match(each, /boqo-upload\.mjs" caption --run "<video>" --n <n>`/);
+  assert.match(each, /`<n>` the number in its name \(`clip-03\.mp4` is 3\)/);
+  assert.match(each, /reword that row's `title` in `<video>\/clips\.json`.*and the item's `title` in `<plan>`/);
+  assert.match(each, /`--tags '<a>,<b>'`, in single quotes/);
+  for (const [f, text] of docs) {
+    assert.doesNotMatch(text, /--title "|--hook "|--prompt "|name "<|`--tags a,b`/, `${f} puts words on a command line`);
+  }
+  const rules = flat(skill.slice(skill.indexOf('## Rules'), skill.indexOf('## Setup')));
+  assert.match(rules, /\*\*Words never go on a command line\.\*\*/);
+});
+
+test('onboarding\'s defaults save the Default kit from a file, and leave no samples folder', () => {
+  const onb = flat(read(join(skillDir, 'onboarding.md')));
+  assert.match(onb, /`\{"version": 2, "name": "default"\}` to `<samples>\/default\.json`/);
+  assert.match(onb, /node "\$HOME\/\.boqo-channel\/tools\/brand\.mjs" save "<samples>\/default\.json"` \(no logo\), then `rm -rf "<samples>"`/);
+});
+
+test('a video with no captions: whisper that heard no speech is `"words": 0` in asr.json', () => {
+  const noCaptions = flat(skill.slice(skill.indexOf('## A video with no captions'), skill.indexOf('## Redo one clip')));
+  assert.match(noCaptions, /`"words": 0` in `<video>\/asr\.json`: whisper heard no speech/);
+  assert.doesNotMatch(skill, /the words file has no words/);
 });
 
 test('the plan is taken from clips.json in final order, rendered clips only', () => {
