@@ -1,4 +1,4 @@
-<!-- copied from boqo-ai/boqo-clips skills/boqo-clips/post.md @ 40e164e; keep in step -->
+<!-- copied from boqo-ai/boqo-clips skills/boqo-clips/post.md @ 620305e; keep in step -->
 # Posting through boqo
 
 Runs from SKILL.md → Posting the plan, for the items of `<plan>` still open. It posts only through boqo's tools, and

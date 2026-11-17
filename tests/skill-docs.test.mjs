@@ -68,7 +68,8 @@ test('an unattended run (the timer\'s own prompt) never waits for the question',
 
 test('the plan items carry the hook, and post.md posts it through the caption command, with its copy header', () => {
   const post = read(join(skillDir, 'post.md'));
-  assert.match(post.split('\n')[0], /^<!-- copied from boqo-ai\/boqo-clips skills\/boqo-clips\/post\.md @ 40e164e; keep in step -->$/);
+  const synced = JSON.parse(read(join(root, 'engine', 'ENGINE.json'))).commit.slice(0, 7);
+  assert.equal(post.split('\n')[0], `<!-- copied from boqo-ai/boqo-clips skills/boqo-clips/post.md @ ${synced}; keep in step -->`);
   assert.match(post, /boqo-upload\.mjs" caption --title/);
   assert.match(post, /Captions written by the agent/);
   assert.match(skill, /"hook": "<its hook, or null>"/);

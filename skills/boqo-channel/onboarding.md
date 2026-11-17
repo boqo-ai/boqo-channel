@@ -1,10 +1,12 @@
-<!-- copied from boqo-ai/boqo-clips skills/boqo-clips/onboarding.md @ 40e164e; keep in step -->
+<!-- copied from boqo-ai/boqo-clips skills/boqo-clips/onboarding.md @ 620305e; keep in step -->
 # Onboarding
 
 Runs from INSTALL.md step 7, and from a run that finds no brand kit or no `<home>/boqo-channel/config.json`
 (SKILL.md → Setup). Three parts, in order: the brand kit, the boqo connection, the channels and the posting rule. Skip a part
 that is done: a kit `node "$HOME/.boqo-channel/tools/brand.mjs" list` already shows (kits are shared by every boqo skill, so
 another one may have made it), the channels and the rule already in `config.json`.
+
+If the person says "defaults" (or "skip", or gives no brand), take the Default kit: save `{"version": 2, "name": "default"}` with `brand.mjs save` (no logo), ask no questions, render no samples, and go on to part 2.
 
 Open with two sentences: in about two minutes you set up their brand kit (a name, a logo, a colour or two, and a
 caption style they pick by looking at it), then choose the channels to follow, then make the first clips of each channel's
