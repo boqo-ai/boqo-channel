@@ -100,10 +100,18 @@ hold a space); `~` does not expand inside quotes, so the commands use `"$HOME/..
 
 ```sh
 git -C "$HOME/.boqo-channel" pull --ff-only
+ls -d "$HOME/.boqo-channel/node_modules"
+```
+
+When `ls` finds no `node_modules` (an install from before the packages, which never said yes to them), ask step 4's
+question first, once; on a no, stop there. When it finds one, the person said yes to the packages at install. Then
+put them in step with the update:
+
+```sh
 cd "$HOME/.boqo-channel" && npm ci --omit=dev --ignore-scripts
 ```
 
-The second command puts the packages back in step with the update (the person's yes in step 4 covers it). A copied folder (step 3, on Windows without real links) is updated by copying the files into it again, after the
+A copied folder (step 3, on Windows without real links) is updated by copying the files into it again, after the
 person's yes (the `/.` copies the folder's contents, never a second folder inside it):
 
 ```sh
