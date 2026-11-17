@@ -195,7 +195,7 @@ what the person names.
       node "$HOME/.boqo-channel/tools/select-request.mjs" --run "<video>"
       ```
       It writes `<video>/select-request.md` and prints `{"target", "segments", "chars"}`. Tell the person, in one
-      line, how many clips it aims for (`target`). The language comes from `<video>/info.json`, or from
+      line, how many clips it aims for (`target`) and that about the best half are kept (at least 3). The language comes from `<video>/info.json`, or from
       `<video>/transcript-language.txt` after a boqo transcript.
    4. **Select.** Read `select.md` (once a run), then the whole of `<video>/select-request.md` (in pages when it is
       long), and write `<video>/selection.json` once.

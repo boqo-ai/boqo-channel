@@ -1,4 +1,4 @@
-<!-- copied from boqo-ai/boqo-clips skills/boqo-clips/onboarding.md @ 620305e; keep in step -->
+<!-- copied from boqo-ai/boqo-clips skills/boqo-clips/onboarding.md @ f50f844; keep in step -->
 # Onboarding
 
 Runs from INSTALL.md step 7, and from a run that finds no brand kit or no `<home>/boqo-channel/config.json`
